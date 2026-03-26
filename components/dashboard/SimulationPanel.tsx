@@ -54,7 +54,7 @@ export function SimulationPanel({
           type="button"
           disabled={disabled}
           onClick={onSimulateBooking}
-          className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Simulate booking confirmation
         </button>

@@ -2,12 +2,12 @@ import { LeadStatus } from "@/types/lead";
 
 const styles: Record<LeadStatus, string> = {
   New: "bg-slate-100 text-slate-700",
-  Qualified: "bg-emerald-100 text-emerald-700",
-  "In Campaign": "bg-cyan-100 text-cyan-700",
-  Interested: "bg-teal-100 text-teal-800",
+  Qualified: "bg-stone-200 text-stone-900",
+  "In Campaign": "bg-zinc-200 text-zinc-900",
+  Interested: "bg-neutral-200 text-neutral-900",
   "Needs Review": "bg-orange-100 text-orange-700",
-  "Booking Sent": "bg-indigo-100 text-indigo-700",
-  Booked: "bg-emerald-200 text-emerald-900",
+  "Booking Sent": "bg-stone-100 text-stone-900",
+  Booked: "bg-slate-300 text-slate-900",
   "Not Interested": "bg-rose-100 text-rose-700",
   "Not Now": "bg-yellow-100 text-yellow-800"
 };
@@ -33,8 +33,8 @@ export function StatusBadge({ status }: { status: LeadStatus }) {
 }
 
 const bookingStyles: Record<string, string> = {
-  booking_sent: "bg-indigo-50 text-indigo-900 border border-indigo-200",
-  booked: "bg-emerald-50 text-emerald-900 border border-emerald-200"
+  booking_sent: "bg-stone-100 text-stone-900 border border-stone-200",
+  booked: "bg-slate-100 text-slate-900 border border-slate-300"
 };
 
 const bookingLabels: Record<string, string> = {

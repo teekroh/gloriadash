@@ -23,6 +23,12 @@ import type { InboxThread, Phase3Metrics } from "@/services/dashboardAggregation
 import { Campaign } from "@/types/campaign";
 import type { LeadType } from "@/types/lead";
 import { Lead } from "@/types/lead";
+import { CampaignSequenceTree } from "@/components/dashboard/CampaignSequenceTree";
+import { SimulationPanel } from "@/components/dashboard/SimulationPanel";
+import { VerifyWorkbench } from "@/components/dashboard/VerifyWorkbench";
+import { AutomationAuditBadges } from "@/components/ui/HandlingBadge";
+import { SourceBadge } from "@/components/ui/SourceBadge";
+import { BookingStatusBadge, StatusBadge } from "@/components/ui/StatusBadge";
 
 const MANUAL_LEAD_TYPES: LeadType[] = [
   "homeowner",
@@ -32,17 +38,12 @@ const MANUAL_LEAD_TYPES: LeadType[] = [
   "cabinet shop",
   "commercial builder"
 ];
-import { CampaignSequenceTree } from "@/components/dashboard/CampaignSequenceTree";
-import { SimulationPanel } from "@/components/dashboard/SimulationPanel";
-import { VerifyWorkbench } from "@/components/dashboard/VerifyWorkbench";
-import { AutomationAuditBadges } from "@/components/ui/HandlingBadge";
-import { SourceBadge } from "@/components/ui/SourceBadge";
-import { BookingStatusBadge, StatusBadge } from "@/components/ui/StatusBadge";
 
 const INBOX_TABS = ["Interested", "Booking Sent", "Needs Review", "Not Now", "Suppressed"] as const;
 
 /** Sidebar order: Dashboard → Inbox → Campaigns → Bookings → Leads → Verify → Simulation */
 const SIDEBAR_VIEWS = ["dashboard", "inbox", "campaigns", "bookings", "leads", "verify", "simulation"] as const;
+const LITE_SIDEBAR_VIEWS = ["inbox", "bookings"] as const;
 
 function inboxTabMatches(thread: InboxThread, lead: Lead | undefined, tab: (typeof INBOX_TABS)[number]): boolean {
   if (!lead) return false;
@@ -137,7 +138,7 @@ function DashboardBookingsCalendar({ leads }: { leads: Lead[] }) {
           ) : (
             <div
               key={cell.day}
-              className={`min-h-[72px] rounded border p-1 text-left text-xs ${cell.items.length ? "border-brand/30 bg-brand/5" : "border-slate-100 bg-white"}`}
+              className={`min-h-[72px] rounded border p-1 text-left text-xs ${cell.items.length ? "border-slate-300 bg-stone-100" : "border-slate-100 bg-white"}`}
             >
               <span className="font-semibold text-slate-800">{cell.day}</span>
               {cell.items.slice(0, 2).map((e, j) => (
@@ -229,7 +230,7 @@ function InboxChatColumn({
                 <p className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{selectedThread.inboundSnippet}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium capitalize text-indigo-900">
+                <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-900">
                   {selectedThread.classification.replace(/_/g, " ")}
                 </span>
                 <span className="text-[11px] text-slate-600">{(selectedThread.confidence * 100).toFixed(0)}% model confidence</span>
@@ -261,7 +262,7 @@ function InboxChatColumn({
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white"
+                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
                     onClick={() => {
                       const d = inboxLead.latestInbound?.suggestedReplyDraft || "";
                       void vm.sendReviewReply(inboxLead.id, d, inboxLead.latestInbound?.id);
@@ -399,6 +400,7 @@ export function DashboardApp({
   const [campaignConfirmLow, setCampaignConfirmLow] = useState(false);
   const [campaignOverrideVerify, setCampaignOverrideVerify] = useState(false);
   const [activeView, setActiveView] = useState<(typeof SIDEBAR_VIEWS)[number]>("dashboard");
+  const [liteMode, setLiteMode] = useState(false);
   const [dashboardTab, setDashboardTab] = useState<"active" | "pool" | "lost">("active");
   const [inboxLeadId, setInboxLeadId] = useState<string | null>(null);
   const [inboxTab, setInboxTab] = useState<(typeof INBOX_TABS)[number]>("Needs Review");
@@ -441,6 +443,13 @@ export function DashboardApp({
       sourceDetail: ""
     });
   const inboxLead = vm.leads.find((l) => l.id === inboxLeadId) ?? null;
+  const visibleViews = liteMode ? LITE_SIDEBAR_VIEWS : SIDEBAR_VIEWS;
+
+  useEffect(() => {
+    if (liteMode && !LITE_SIDEBAR_VIEWS.includes(activeView as (typeof LITE_SIDEBAR_VIEWS)[number])) {
+      setActiveView("inbox");
+    }
+  }, [liteMode, activeView]);
 
   const inboxByTab = useMemo(() => {
     const map = {} as Record<(typeof INBOX_TABS)[number], InboxThread[]>;
@@ -648,7 +657,7 @@ export function DashboardApp({
             </div>
           </div>
           <nav className="space-y-2 text-sm">
-            {SIDEBAR_VIEWS.map((v) => (
+            {visibleViews.map((v) => (
               <button
                 key={v}
                 type="button"
@@ -661,6 +670,17 @@ export function DashboardApp({
             <Link href="/setup/cal" className="block rounded px-3 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white">
               Cal.com setup
             </Link>
+            <button
+              type="button"
+              onClick={() => setLiteMode((v) => !v)}
+              className={`mt-2 block w-full rounded border px-3 py-2 text-left text-xs font-medium ${
+                liteMode
+                  ? "border-stone-300 bg-stone-100 text-slate-900"
+                  : "border-slate-700 text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              {liteMode ? "Lite mode: Inbox + Bookings" : "Switch to Lite mode"}
+            </button>
           </nav>
           <div className="mt-6 rounded border border-slate-700 p-3 text-xs">
             <p className="font-semibold text-slate-300">Source Definitions</p>
@@ -677,7 +697,7 @@ export function DashboardApp({
               <h1 className="text-xl font-semibold">Lead Ops Command Center</h1>
               <p className="text-sm text-slate-600">Qualified lead launcher, reply triage, and remote intro booking flow.</p>
             </div>
-            <button onClick={exportData} className="rounded bg-brand px-3 py-2 text-sm font-semibold text-white">Export (Includes Source)</button>
+            <button onClick={exportData} className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">Export (Includes Source)</button>
           </header>
           {!vm.bookingLinkConfigured && (
             <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -1201,8 +1221,8 @@ export function DashboardApp({
                 </div>
 
                 {singleSelectedLead ? (
-                  <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-sm text-slate-800">
-                    <p className="font-semibold text-indigo-950">Lead detail · {singleSelectedLead.fullName}</p>
+                  <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-slate-800">
+                    <p className="font-semibold text-slate-900">Lead detail · {singleSelectedLead.fullName}</p>
                     <p className="mt-1 text-xs">
                       <strong>Outreach readiness:</strong> {outreachReadiness(singleSelectedLead).label} —{" "}
                       {outreachReadiness(singleSelectedLead).factors.join(" · ")}
@@ -1285,7 +1305,7 @@ export function DashboardApp({
                         window.alert((data as { error?: string }).error ?? "Launch blocked.");
                       }
                     }}
-                    className="rounded bg-brand px-3 py-2 text-sm font-semibold text-white"
+                    className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                   >
                     Launch Campaign ({vm.selectedIds.length})
                   </button>
@@ -1658,7 +1678,7 @@ export function DashboardApp({
                           setReviewEdit("");
                         }}
                         className={`min-w-[200px] max-w-[260px] shrink-0 rounded-lg border p-2.5 text-left transition ${
-                          active ? "border-brand bg-brand/5 ring-2 ring-brand/30" : "border-slate-200 bg-white hover:border-slate-300"
+                          active ? "border-slate-500 bg-stone-100 ring-2 ring-slate-300" : "border-slate-200 bg-white hover:border-slate-300"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-1">
@@ -1724,7 +1744,7 @@ export function DashboardApp({
                 </div>
                 <p className="text-sm text-slate-700">
                   Cal link:{" "}
-                  <span className="font-mono text-xs text-brand">{vm.bookingLinkDisplay || appConfig.bookingLink}</span>
+                  <span className="font-mono text-xs text-slate-900">{vm.bookingLinkDisplay || appConfig.bookingLink}</span>
                 </p>
               </div>
               <div className="space-y-4">

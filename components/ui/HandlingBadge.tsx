@@ -39,7 +39,7 @@ export function AutomationAuditBadges({
         <span className="badge border border-slate-200 bg-slate-50 text-slate-700">No auto action</span>
       )}
       {mixedIntent ? (
-        <span className="badge border border-violet-200 bg-violet-50 text-violet-900" title="Multiple intents detected — booking automation blocked unless clearly safe.">
+        <span className="badge border border-stone-300 bg-stone-100 text-stone-900" title="Multiple intents detected — booking automation blocked unless clearly safe.">
           Mixed intent
         </span>
       ) : null}

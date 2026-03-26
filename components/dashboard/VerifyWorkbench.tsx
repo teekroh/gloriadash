@@ -201,7 +201,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
               <div className="mt-4 space-y-2 text-sm">
                 <p>
                   <span className="text-slate-500">Email</span>{" "}
-                  <a className="font-medium text-brand underline" href={`mailto:${current.email}`}>
+                  <a className="font-medium text-slate-900 underline" href={`mailto:${current.email}`}>
                     {current.email}
                   </a>
                 </p>
@@ -249,20 +249,20 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
               </div>
             </article>
 
-            <article className="flex flex-col rounded-xl border-2 border-indigo-100 bg-indigo-50/40 p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900/80">Web search</p>
+            <article className="flex flex-col rounded-xl border-2 border-stone-200 bg-stone-50/60 p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-900/80">Web search</p>
               <p className="mt-1 text-xs text-slate-600">
                 Inline results use Google <strong>Custom Search</strong> (set <code className="rounded bg-white/80 px-1">GOOGLE_CSE_API_KEY</code> +{" "}
                 <code className="rounded bg-white/80 px-1">GOOGLE_CSE_CX</code>). Otherwise open Google in a new tab.
               </p>
-              <p className="mt-3 break-words rounded border border-indigo-100 bg-white px-3 py-2 font-mono text-[11px] text-slate-800">
+              <p className="mt-3 break-words rounded border border-stone-200 bg-white px-3 py-2 font-mono text-[11px] text-slate-800">
                 {buildReviewQuery(current)}
               </p>
               <a
                 href={openGoogle}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex w-fit items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="mt-3 inline-flex w-fit items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
                 Open in Google →
               </a>
@@ -282,7 +282,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
                     ) : (
                       searchPayload.items.map((it, i) => (
                         <li key={`${it.link}-${i}`} className="border-b border-slate-100 pb-3 last:border-0">
-                          <a href={it.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-indigo-700 hover:underline">
+                          <a href={it.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-900 hover:underline">
                             {it.title || it.link}
                           </a>
                           <p className="mt-1 text-[11px] leading-snug text-slate-600">{it.snippet}</p>

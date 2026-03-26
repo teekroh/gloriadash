@@ -73,7 +73,7 @@ export function CampaignSequenceTree({
       <div className="relative mt-4 border-l-2 border-slate-200 pl-4">
         {TREE_LABELS.map((node, i) => (
           <div key={node.key} className="relative mb-4 last:mb-0">
-            <span className="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-brand bg-white" />
+            <span className="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-slate-600 bg-white" />
             {node.key === "firstTouch" ? (
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <p className="text-sm font-medium text-slate-800">{node.title}</p>
