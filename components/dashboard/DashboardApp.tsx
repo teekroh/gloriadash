@@ -21,7 +21,17 @@ import {
 import { DEPLOY_VERIFY_MIN_SCORE, isEligibleForCampaignSend } from "@/services/deployVerifyPolicy";
 import type { InboxThread, Phase3Metrics } from "@/services/dashboardAggregation";
 import { Campaign } from "@/types/campaign";
+import type { LeadType } from "@/types/lead";
 import { Lead } from "@/types/lead";
+
+const MANUAL_LEAD_TYPES: LeadType[] = [
+  "homeowner",
+  "designer",
+  "architect",
+  "builder",
+  "cabinet shop",
+  "commercial builder"
+];
 import { CampaignSequenceTree } from "@/components/dashboard/CampaignSequenceTree";
 import { SimulationPanel } from "@/components/dashboard/SimulationPanel";
 import { VerifyWorkbench } from "@/components/dashboard/VerifyWorkbench";
@@ -395,6 +405,41 @@ export function DashboardApp({
   const [reviewEdit, setReviewEdit] = useState("");
   const [calWebhookTest, setCalWebhookTest] = useState<string | null>(null);
   const [isCalWebhookTesting, setIsCalWebhookTesting] = useState(false);
+  const [addLeadOpen, setAddLeadOpen] = useState(false);
+  const [addLeadBusy, setAddLeadBusy] = useState(false);
+  const [addLeadForm, setAddLeadForm] = useState({
+    firstName: "",
+    lastName: "",
+    company: "",
+    email: "",
+    phone: "",
+    city: "",
+    state: "",
+    zip: "",
+    leadType: "homeowner" as LeadType,
+    amountSpent: "0",
+    distanceMinutes: "30",
+    addressConfidence: "",
+    notes: "",
+    sourceDetail: ""
+  });
+  const resetAddLeadForm = () =>
+    setAddLeadForm({
+      firstName: "",
+      lastName: "",
+      company: "",
+      email: "",
+      phone: "",
+      city: "",
+      state: "",
+      zip: "",
+      leadType: "homeowner",
+      amountSpent: "0",
+      distanceMinutes: "30",
+      addressConfidence: "",
+      notes: "",
+      sourceDetail: ""
+    });
   const inboxLead = vm.leads.find((l) => l.id === inboxLeadId) ?? null;
 
   const inboxByTab = useMemo(() => {
@@ -793,11 +838,228 @@ export function DashboardApp({
 
           {activeView === "leads" && (
             <section className="card overflow-hidden border-t-4 border-slate-800/15 bg-gradient-to-b from-white to-slate-50 shadow-sm">
+                {addLeadOpen ? (
+                  <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+                    role="presentation"
+                    onClick={() => {
+                      if (!addLeadBusy) setAddLeadOpen(false);
+                    }}
+                  >
+                    <div
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="add-lead-title"
+                      className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h3 id="add-lead-title" className="text-lg font-semibold text-slate-900">
+                        Add lead
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Creates a <strong>Manual</strong> source lead, recomputes fit score from distance / spend / type, and sets Verify to pending if score is high.
+                      </p>
+                      <form
+                        className="mt-4 space-y-3"
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          setAddLeadBusy(true);
+                          try {
+                            const addrTrim = addLeadForm.addressConfidence.trim();
+                            const addrNum = addrTrim === "" ? NaN : Number(addrTrim);
+                            const r = await vm.createLead({
+                              firstName: addLeadForm.firstName.trim(),
+                              lastName: addLeadForm.lastName.trim(),
+                              company: addLeadForm.company.trim(),
+                              email: addLeadForm.email.trim(),
+                              phone: addLeadForm.phone.trim(),
+                              city: addLeadForm.city.trim(),
+                              state: addLeadForm.state.trim(),
+                              zip: addLeadForm.zip.trim(),
+                              leadType: addLeadForm.leadType,
+                              amountSpent: Number(addLeadForm.amountSpent) || 0,
+                              distanceMinutes: Number(addLeadForm.distanceMinutes) || 30,
+                              notes: addLeadForm.notes.trim(),
+                              sourceDetail: addLeadForm.sourceDetail.trim() || undefined,
+                              addressConfidence:
+                                addrTrim === "" || !Number.isFinite(addrNum) ? null : addrNum
+                            });
+                            if (!r.ok) {
+                              if (r.error === "duplicate_email") {
+                                window.alert("A lead with this email already exists.");
+                              } else {
+                                window.alert(`Could not add lead: ${r.error}`);
+                              }
+                              return;
+                            }
+                            setAddLeadOpen(false);
+                            resetAddLeadForm();
+                          } finally {
+                            setAddLeadBusy(false);
+                          }
+                        }}
+                      >
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            required
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="First name *"
+                            value={addLeadForm.firstName}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, firstName: e.target.value }))}
+                          />
+                          <input
+                            required
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="Last name *"
+                            value={addLeadForm.lastName}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, lastName: e.target.value }))}
+                          />
+                        </div>
+                        <input
+                          required
+                          type="email"
+                          className="w-full rounded border border-slate-300 p-2 text-sm"
+                          placeholder="Email *"
+                          value={addLeadForm.email}
+                          onChange={(e) => setAddLeadForm((f) => ({ ...f, email: e.target.value }))}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="Phone"
+                            value={addLeadForm.phone}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, phone: e.target.value }))}
+                          />
+                          <input
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="Company"
+                            value={addLeadForm.company}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, company: e.target.value }))}
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <input
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="City"
+                            value={addLeadForm.city}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, city: e.target.value }))}
+                          />
+                          <input
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="State"
+                            value={addLeadForm.state}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, state: e.target.value }))}
+                          />
+                          <input
+                            className="rounded border border-slate-300 p-2 text-sm"
+                            placeholder="ZIP"
+                            value={addLeadForm.zip}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, zip: e.target.value }))}
+                          />
+                        </div>
+                        <select
+                          className="w-full rounded border border-slate-300 p-2 text-sm"
+                          value={addLeadForm.leadType}
+                          onChange={(e) =>
+                            setAddLeadForm((f) => ({ ...f, leadType: e.target.value as LeadType }))
+                          }
+                        >
+                          {MANUAL_LEAD_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-xs text-slate-600">
+                            <span className="mb-0.5 block font-medium">Est. project spend ($)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              className="w-full rounded border border-slate-300 p-2 text-sm"
+                              value={addLeadForm.amountSpent}
+                              onChange={(e) => setAddLeadForm((f) => ({ ...f, amountSpent: e.target.value }))}
+                            />
+                          </label>
+                          <label className="text-xs text-slate-600">
+                            <span className="mb-0.5 block font-medium">Distance (minutes)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              className="w-full rounded border border-slate-300 p-2 text-sm"
+                              value={addLeadForm.distanceMinutes}
+                              onChange={(e) => setAddLeadForm((f) => ({ ...f, distanceMinutes: e.target.value }))}
+                            />
+                          </label>
+                        </div>
+                        <label className="block text-xs text-slate-600">
+                          <span className="mb-0.5 block font-medium">Address confidence (0–100, optional)</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            className="w-full rounded border border-slate-300 p-2 text-sm"
+                            placeholder="Leave blank if unknown"
+                            value={addLeadForm.addressConfidence}
+                            onChange={(e) => setAddLeadForm((f) => ({ ...f, addressConfidence: e.target.value }))}
+                          />
+                        </label>
+                        <input
+                          className="w-full rounded border border-slate-300 p-2 text-sm"
+                          placeholder="Source detail (optional)"
+                          value={addLeadForm.sourceDetail}
+                          onChange={(e) => setAddLeadForm((f) => ({ ...f, sourceDetail: e.target.value }))}
+                        />
+                        <textarea
+                          className="w-full rounded border border-slate-300 p-2 text-sm"
+                          rows={3}
+                          placeholder="Notes (optional)"
+                          value={addLeadForm.notes}
+                          onChange={(e) => setAddLeadForm((f) => ({ ...f, notes: e.target.value }))}
+                        />
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            disabled={addLeadBusy}
+                            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                            onClick={() => {
+                              if (!addLeadBusy) setAddLeadOpen(false);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={addLeadBusy}
+                            className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                          >
+                            {addLeadBusy ? "Saving…" : "Save lead"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-                  <h2 className="text-lg font-semibold text-slate-900">Lead library</h2>
-                  <p className="mt-0.5 text-xs text-slate-600">
-                    Sorted by <strong>score</strong> (highest first). Filter, multi-select with checkboxes, preview first-touch copy, and launch campaigns to the selected audience.
-                  </p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-semibold text-slate-900">Lead library</h2>
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        Sorted by <strong>score</strong> (highest first). Filter, multi-select with checkboxes, preview first-touch copy, and launch campaigns to the
+                        selected audience.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                      onClick={() => {
+                        resetAddLeadForm();
+                        setAddLeadOpen(true);
+                      }}
+                    >
+                      Add lead
+                    </button>
+                  </div>
                 </div>
                 <div className="p-4">
                 <div className="mb-3 grid grid-cols-4 gap-2">

@@ -120,6 +120,24 @@ export interface Lead {
   };
 }
 
+/** Body for POST /api/leads (manual add from dashboard). */
+export type CreateManualLeadPayload = {
+  firstName: string;
+  lastName: string;
+  company?: string;
+  email: string;
+  phone?: string;
+  city: string;
+  state: string;
+  zip: string;
+  leadType: LeadType;
+  amountSpent?: number;
+  distanceMinutes?: number;
+  notes?: string;
+  addressConfidence?: number | null;
+  sourceDetail?: string;
+};
+
 export type ReplyCategory =
   | "positive"
   | "asks_for_link"

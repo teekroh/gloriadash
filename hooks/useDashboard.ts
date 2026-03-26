@@ -13,6 +13,7 @@ import {
   OUTREACH_ADDRESS_VERY_POOR_MAX,
   type AddressConfidenceBand
 } from "@/services/addressConfidencePolicy";
+import type { CreateManualLeadPayload } from "@/types/lead";
 import { Lead, LeadSource, LeadStatus, LeadType, PriorityTier } from "@/types/lead";
 
 export type AddressQuickFilter = "all" | "verified_86" | "reachable_71" | "needs_review_under_71";
@@ -318,6 +319,20 @@ export const useDashboard = (
     return data as { ok?: boolean; error?: string; results?: unknown[] };
   };
 
+  const createLead = async (payload: CreateManualLeadPayload) => {
+    const res = await fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; id?: string };
+    if (!res.ok || !data.ok) {
+      return { ok: false as const, error: data.error ?? "request_failed" };
+    }
+    await refresh();
+    return { ok: true as const, id: data.id ?? "" };
+  };
+
   return {
     leads,
     inboxThreads,
@@ -344,6 +359,7 @@ export const useDashboard = (
     snoozeLeadClient,
     markNotInterestedClient,
     simulateInbound,
-    seedInboxSamples
+    seedInboxSamples,
+    createLead
   };
 };

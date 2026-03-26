@@ -12,7 +12,7 @@ import { processInboundEmail } from "@/services/inboundProcessingService";
 import { sendOutreachEmail } from "@/services/outreachSendService";
 import { geocodeCityStateZip } from "@/services/nominatimGeocode";
 import { scoreLeadBase } from "@/services/scoringService";
-import type { Lead } from "@/types/lead";
+import type { CreateManualLeadPayload, Lead } from "@/types/lead";
 import {
   campaignSendEligibility,
   needsLowAddressConfirmInBatch,
@@ -86,6 +86,80 @@ export const ensureOwnerTestLead = async () => {
       updatedAt: now
     }
   });
+};
+
+/** Creates a single lead with source Manual, recompute score from distance / spend / type. */
+export const createManualLead = async (
+  input: CreateManualLeadPayload
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> => {
+  const email = input.email.trim().toLowerCase();
+  if (!email) return { ok: false, error: "email_required" };
+
+  const existing = await db.lead.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } }
+  });
+  if (existing) return { ok: false, error: "duplicate_email" };
+
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
+  if (!firstName || !lastName) return { ok: false, error: "name_required" };
+
+  const fullName = `${firstName} ${lastName}`.trim();
+  const now = new Date();
+  const amountSpent = Number.isFinite(input.amountSpent) ? Number(input.amountSpent) : 0;
+  const distanceMinutes =
+    Number.isFinite(input.distanceMinutes) ? Math.max(0, Math.round(Number(input.distanceMinutes))) : 30;
+
+  const scored = scoreLeadBase({
+    distanceMinutes,
+    amountSpent,
+    leadType: input.leadType
+  });
+
+  const id = uid();
+  const addr =
+    input.addressConfidence !== null && input.addressConfidence !== undefined && Number.isFinite(input.addressConfidence)
+      ? Math.min(100, Math.max(0, Math.round(Number(input.addressConfidence))))
+      : null;
+
+  await db.lead.create({
+    data: {
+      id,
+      firstName,
+      lastName,
+      fullName,
+      company: (input.company ?? "").trim(),
+      email,
+      phone: (input.phone ?? "").trim(),
+      city: (input.city ?? "").trim(),
+      state: (input.state ?? "").trim(),
+      zip: (input.zip ?? "").trim(),
+      leadType: input.leadType,
+      source: "Manual",
+      sourceDetail: (input.sourceDetail ?? "").trim() || "Added from lead library",
+      enrichmentStatus: "none",
+      locationConfidence: null,
+      addressConfidence: addr,
+      confidenceNotes: "",
+      importedFromCsv: false,
+      amountSpent,
+      notes: (input.notes ?? "").trim(),
+      distanceMinutes,
+      score: scored.score,
+      conversionScore: scored.conversionScore,
+      projectFitScore: scored.projectFitScore,
+      estimatedProjectTier: scored.estimatedProjectTier,
+      priorityTier: scored.priorityTier,
+      status: "New",
+      doNotContact: false,
+      deployVerifyVerdict: null,
+      scoreBreakdownJson: JSON.stringify(scored.breakdown),
+      createdAt: now,
+      updatedAt: now
+    }
+  });
+
+  return { ok: true, id };
 };
 
 export const ensureSeeded = async () => {
