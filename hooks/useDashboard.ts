@@ -61,7 +61,8 @@ export const useDashboard = (
   initialPhase3Metrics: Phase3Metrics,
   initialBookingLinkConfigured = true,
   initialBookingLinkDisplay = "",
-  initialBookingReplyPreview = ""
+  initialBookingReplyPreview = "",
+  initialOutreachDryRun = true
 ) => {
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [inboxThreads, setInboxThreads] = useState<InboxThread[]>(initialInboxThreads);
@@ -69,6 +70,7 @@ export const useDashboard = (
   const [bookingLinkConfigured, setBookingLinkConfigured] = useState(initialBookingLinkConfigured);
   const [bookingLinkDisplay, setBookingLinkDisplay] = useState(initialBookingLinkDisplay);
   const [bookingReplyPreview, setBookingReplyPreview] = useState(initialBookingReplyPreview);
+  const [outreachDryRun, setOutreachDryRun] = useState(initialOutreachDryRun);
   const [filters, setFilters] = useState<Filters>(defaultLeadFilters);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
@@ -105,6 +107,7 @@ export const useDashboard = (
     if (typeof data.bookingLinkConfigured === "boolean") setBookingLinkConfigured(data.bookingLinkConfigured);
     if (typeof data.bookingLinkDisplay === "string") setBookingLinkDisplay(data.bookingLinkDisplay);
     if (typeof data.bookingReplyPreview === "string") setBookingReplyPreview(data.bookingReplyPreview);
+    if (typeof data.outreachDryRun === "boolean") setOutreachDryRun(data.outreachDryRun);
   };
 
   const filtered = useMemo(
@@ -340,6 +343,7 @@ export const useDashboard = (
     bookingLinkConfigured,
     bookingLinkDisplay,
     bookingReplyPreview,
+    outreachDryRun,
     filtered,
     filters,
     setFilters,

@@ -314,6 +314,7 @@ export function DashboardApp({
   initialBookingLinkConfigured = true,
   initialBookingLinkDisplay = "",
   initialBookingReplyPreview = "",
+  initialOutreachDryRun = true,
   importSummary
 }: {
   initialLeads: Lead[];
@@ -323,6 +324,7 @@ export function DashboardApp({
   initialBookingLinkConfigured?: boolean;
   initialBookingLinkDisplay?: string;
   initialBookingReplyPreview?: string;
+  initialOutreachDryRun?: boolean;
   importSummary: ImportSummary;
 }) {
   const vm = useDashboard(
@@ -332,7 +334,8 @@ export function DashboardApp({
     initialPhase3Metrics,
     initialBookingLinkConfigured,
     initialBookingLinkDisplay,
-    initialBookingReplyPreview
+    initialBookingReplyPreview,
+    initialOutreachDryRun
   );
 
   type LeadStatFilterAction =
@@ -1621,6 +1624,15 @@ export function DashboardApp({
 
           {activeView === "campaigns" && (
             <section className="card mb-4">
+              <div
+                className={`mb-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                  vm.outreachDryRun
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : "border-rose-300 bg-rose-50 text-rose-900"
+                }`}
+              >
+                Current mode: {vm.outreachDryRun ? "DRY RUN (no sends)" : "LIVE SEND"}
+              </div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pipeline stats</p>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {[

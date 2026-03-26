@@ -36,6 +36,7 @@ export default async function DashboardPage() {
       initialBookingLinkConfigured={data.bookingLinkConfigured ?? true}
       initialBookingLinkDisplay={data.bookingLinkDisplay ?? ""}
       initialBookingReplyPreview={data.bookingReplyPreview ?? ""}
+      initialOutreachDryRun={data.outreachDryRun ?? true}
       importSummary={importSummary}
     />
   );

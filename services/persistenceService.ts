@@ -266,7 +266,8 @@ export const getDashboardData = async () => {
     phase3Metrics,
     bookingLinkConfigured: isBookingLinkConfigured(),
     bookingLinkDisplay,
-    bookingReplyPreview: getBookingReplyTemplate()
+    bookingReplyPreview: getBookingReplyTemplate(),
+    outreachDryRun: outreachConfig.dryRun
   };
 };
 
