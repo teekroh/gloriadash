@@ -401,6 +401,8 @@ export function DashboardApp({
   const [campaignOverrideVerify, setCampaignOverrideVerify] = useState(false);
   const [activeView, setActiveView] = useState<(typeof SIDEBAR_VIEWS)[number]>("dashboard");
   const [liteMode, setLiteMode] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoStatus, setDemoStatus] = useState<string | null>(null);
   const [dashboardTab, setDashboardTab] = useState<"active" | "pool" | "lost">("active");
   const [inboxLeadId, setInboxLeadId] = useState<string | null>(null);
   const [inboxTab, setInboxTab] = useState<(typeof INBOX_TABS)[number]>("Needs Review");
@@ -443,6 +445,7 @@ export function DashboardApp({
       sourceDetail: ""
     });
   const inboxLead = vm.leads.find((l) => l.id === inboxLeadId) ?? null;
+  const demoLeadId = simulationLeadId ?? vm.leads[0]?.id ?? null;
   const visibleViews = liteMode ? LITE_SIDEBAR_VIEWS : SIDEBAR_VIEWS;
 
   useEffect(() => {
@@ -682,13 +685,6 @@ export function DashboardApp({
               {liteMode ? "Lite mode: Inbox + Bookings" : "Switch to Lite mode"}
             </button>
           </nav>
-          <div className="mt-6 rounded border border-slate-700 p-3 text-xs">
-            <p className="font-semibold text-slate-300">Source Definitions</p>
-            <p>CSV Import = directly from provided file</p>
-            <p>Online Enriched = existing lead enhanced using online data</p>
-            <p>Scraped / External = sourced outside CSV</p>
-            <p>Manual = user-created</p>
-          </div>
         </aside>
 
         <main className="p-4">
@@ -1408,6 +1404,70 @@ export function DashboardApp({
                   <div>Lost: {dashboardLostLeads.length}</div>
                   <div>Lead pool: {dashboardLeadPool.length}</div>
                 </div>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3">
+                <p className="text-sm font-semibold text-slate-900">Demo actions</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Quick fake activity for demos: seed inbound replies, simulate a positive reply, or mark a booking confirmed.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={demoBusy}
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-50"
+                    onClick={async () => {
+                      setDemoBusy(true);
+                      setDemoStatus("Seeding inbox demo samples...");
+                      try {
+                        const r = await vm.seedInboxSamples();
+                        if (r?.ok === false && r.error) setDemoStatus(`Seed failed: ${r.error}`);
+                        else setDemoStatus("Demo inbox samples seeded.");
+                      } finally {
+                        setDemoBusy(false);
+                      }
+                    }}
+                  >
+                    Seed demo inbox
+                  </button>
+                  <button
+                    type="button"
+                    disabled={demoBusy || !demoLeadId}
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-50"
+                    onClick={async () => {
+                      if (!demoLeadId) return;
+                      setDemoBusy(true);
+                      setDemoStatus("Simulating positive reply...");
+                      try {
+                        await vm.simulateInbound(demoLeadId, "positive");
+                        setDemoStatus("Positive reply simulated.");
+                      } finally {
+                        setDemoBusy(false);
+                      }
+                    }}
+                  >
+                    Simulate positive reply
+                  </button>
+                  <button
+                    type="button"
+                    disabled={demoBusy || !demoLeadId}
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-50"
+                    onClick={async () => {
+                      if (!demoLeadId) return;
+                      setDemoBusy(true);
+                      setDemoStatus("Simulating booking confirmation...");
+                      try {
+                        await vm.simulateCalBookingConfirmation(demoLeadId);
+                        setDemoStatus("Booking confirmation simulated.");
+                      } finally {
+                        setDemoBusy(false);
+                      }
+                    }}
+                  >
+                    Simulate booking confirmed
+                  </button>
+                </div>
+                {demoStatus ? <p className="mt-2 text-xs text-slate-700">{demoStatus}</p> : null}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-100 pb-3">
