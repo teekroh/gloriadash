@@ -1,0 +1,1587 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { appConfig } from "@/config/appConfig";
+import { ImportSummary } from "@/data/importLeads";
+import { useDashboard } from "@/hooks/useDashboard";
+import {
+  ADDRESS_CONFIDENCE_TOOLTIP,
+  AddressConfidenceBadge
+} from "@/components/ui/AddressConfidenceBadge";
+import { getCampaignSequencePreview, renderFirstTouchForLead } from "@/services/messagingService";
+import {
+  addressConfidenceBand,
+  campaignSendEligibility,
+  leadNeedsLowAddressConfirm,
+  outreachReadiness,
+  OUTREACH_ADDRESS_MIN_DEFAULT,
+  OUTREACH_ADDRESS_VERY_POOR_MAX
+} from "@/services/addressConfidencePolicy";
+import { DEPLOY_VERIFY_MIN_SCORE, isEligibleForCampaignSend } from "@/services/deployVerifyPolicy";
+import type { InboxThread, Phase3Metrics } from "@/services/dashboardAggregation";
+import { Campaign } from "@/types/campaign";
+import { Lead } from "@/types/lead";
+import { CampaignSequenceTree } from "@/components/dashboard/CampaignSequenceTree";
+import { SimulationPanel } from "@/components/dashboard/SimulationPanel";
+import { VerifyWorkbench } from "@/components/dashboard/VerifyWorkbench";
+import { AutomationAuditBadges } from "@/components/ui/HandlingBadge";
+import { SourceBadge } from "@/components/ui/SourceBadge";
+import { BookingStatusBadge, StatusBadge } from "@/components/ui/StatusBadge";
+
+const INBOX_TABS = ["Interested", "Booking Sent", "Needs Review", "Not Now", "Suppressed"] as const;
+
+/** Sidebar order: Dashboard → Inbox → Campaigns → Bookings → Leads → Verify → Simulation */
+const SIDEBAR_VIEWS = ["dashboard", "inbox", "campaigns", "bookings", "leads", "verify", "simulation"] as const;
+
+function inboxTabMatches(thread: InboxThread, lead: Lead | undefined, tab: (typeof INBOX_TABS)[number]): boolean {
+  if (!lead) return false;
+  if (tab === "Interested") return lead.status === "Interested";
+  if (tab === "Booking Sent") return lead.status === "Booking Sent";
+  if (tab === "Needs Review") return lead.status === "Needs Review" || thread.needsReview;
+  if (tab === "Not Now") return lead.status === "Not Now";
+  if (tab === "Suppressed") return lead.doNotContact;
+  return false;
+}
+
+function clip(s: string, n: number) {
+  if (s.length <= n) return s;
+  return `${s.slice(0, n)}…`;
+}
+
+function latestBookingRecord(lead: Lead | null | undefined) {
+  if (!lead?.bookingHistory?.length) return null;
+  return [...lead.bookingHistory].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0];
+}
+
+/** Best-effort timestamp of the latest campaign reply. */
+function lastReplyAtIso(lead: Lead): string | null {
+  if (lead.latestInbound?.receivedAt) return lead.latestInbound.receivedAt;
+  const rh = lead.replyHistory;
+  if (rh?.length) return rh[rh.length - 1]!.at;
+  const timelineIn = (lead.timeline ?? []).filter((t) => t.kind === "inbound");
+  const last = timelineIn[timelineIn.length - 1];
+  return last?.at ?? null;
+}
+
+function formatRelativeAgo(iso: string): string {
+  const d = new Date(iso).getTime();
+  if (Number.isNaN(d)) return "—";
+  const now = Date.now();
+  const sec = Math.floor((now - d) / 1000);
+  if (sec < 45) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function leadNeedsInboxReview(lead: Lead) {
+  return lead.status === "Needs Review" || Boolean(lead.latestInbound?.needsReview);
+}
+
+function DashboardBookingsCalendar({ leads }: { leads: Lead[] }) {
+  const events = useMemo(() => {
+    const out: { at: Date; leadName: string; status: string }[] = [];
+    for (const lead of leads) {
+      for (const b of lead.bookingHistory) {
+        if (b.meetingStart) {
+          out.push({ at: new Date(b.meetingStart), leadName: lead.fullName, status: b.status || "—" });
+        }
+      }
+    }
+    return out.sort((a, b) => a.at.getTime() - b.at.getTime());
+  }, [leads]);
+
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const first = new Date(y, m, 1);
+  const pad = first.getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const dayCells = Array.from({ length: pad + daysInMonth }, (_, i) => {
+    if (i < pad) return { day: null as number | null, items: [] as typeof events };
+    const day = i - pad + 1;
+    const items = events.filter((e) => e.at.getFullYear() === y && e.at.getMonth() === m && e.at.getDate() === day);
+    return { day, items };
+  });
+
+  const monthLabel = now.toLocaleString("default", { month: "long", year: "numeric" });
+
+  return (
+    <section className="card mt-4">
+      <h3 className="text-base font-semibold text-slate-900">Bookings calendar · {monthLabel}</h3>
+      <p className="mt-1 text-xs text-slate-600">Meetings with a scheduled start time from booking records.</p>
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase text-slate-500">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+          <div key={d} className="py-1">
+            {d}
+          </div>
+        ))}
+        {dayCells.map((cell, idx) =>
+          cell.day == null ? (
+            <div key={`e-${idx}`} className="min-h-[72px] rounded border border-transparent bg-slate-50/30" />
+          ) : (
+            <div
+              key={cell.day}
+              className={`min-h-[72px] rounded border p-1 text-left text-xs ${cell.items.length ? "border-brand/30 bg-brand/5" : "border-slate-100 bg-white"}`}
+            >
+              <span className="font-semibold text-slate-800">{cell.day}</span>
+              {cell.items.slice(0, 2).map((e, j) => (
+                <p key={j} className="mt-1 truncate text-[10px] text-slate-700" title={`${e.leadName} · ${e.status}`}>
+                  {e.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} {e.leadName.split(" ")[0]}
+                </p>
+              ))}
+              {cell.items.length > 2 ? <p className="text-[10px] text-slate-500">+{cell.items.length - 2} more</p> : null}
+            </div>
+          )
+        )}
+      </div>
+      {!events.length ? <p className="mt-3 text-sm text-slate-500">No dated meetings on record this month.</p> : null}
+    </section>
+  );
+}
+
+function meetingBookingSummary(lead: Lead): { label: string; detail?: string } {
+  const b = latestBookingRecord(lead);
+  if (!b) return { label: "No booking yet" };
+  if (lead.status === "Booked") return { label: "Booked", detail: b.meetingStart ? new Date(b.meetingStart).toLocaleString() : b.note };
+  const st = (b.status || "").toLowerCase();
+  if (st.includes("confirm") || st.includes("booked")) return { label: "Confirmed", detail: b.meetingStart ? new Date(b.meetingStart).toLocaleString() : undefined };
+  if (lead.status === "Booking Sent" || st.includes("invit") || st.includes("pending")) return { label: "Invite / pending", detail: b.bookingLink ? clip(b.bookingLink, 40) : undefined };
+  return { label: b.status || "Booking activity", detail: b.note || undefined };
+}
+
+function classifyBookingInvite(
+  lead: Lead,
+  b: NonNullable<Lead["bookingHistory"]>[number]
+): "accepted" | "waiting" | "closed" {
+  const st = (b.status || "").toLowerCase();
+  const ms = (b.meetingStatus || "").toLowerCase();
+  if (st === "cancelled" || ms.includes("cancel") || st.includes("deny") || ms.includes("deny")) return "closed";
+  if (st === "booked" || st.includes("confirm") || lead.status === "Booked") return "accepted";
+  return "waiting";
+}
+
+function InboxChatColumn({
+  vm,
+  inboxLead,
+  inboxLeadId,
+  latestBookingRecordFn,
+  clip,
+  reviewEdit,
+  setReviewEdit,
+  className
+}: {
+  vm: ReturnType<typeof useDashboard>;
+  inboxLead: Lead | null;
+  inboxLeadId: string | null;
+  latestBookingRecordFn: typeof latestBookingRecord;
+  clip: (s: string, n: number) => string;
+  reviewEdit: string;
+  setReviewEdit: Dispatch<SetStateAction<string>>;
+  className?: string;
+}) {
+  const selectedThread = vm.inboxThreads.find((t) => t.leadId === inboxLeadId) ?? null;
+
+  return (
+    <div className={className ?? "flex min-h-0 flex-1 flex-col gap-3 space-y-0"}>
+      <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
+        <h3 className="mb-1 shrink-0 font-semibold text-slate-900">Chat history</h3>
+        {!inboxLead || !selectedThread ? (
+          <p className="text-sm text-slate-500">Select a thread above to review, approve, and send.</p>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <p className="text-sm font-medium text-slate-900">{inboxLead.fullName}</p>
+            <p className="text-xs text-slate-500">{inboxLead.email}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <SourceBadge source={inboxLead.source} />
+              <StatusBadge status={inboxLead.status} />
+              {(() => {
+                const b = latestBookingRecordFn(inboxLead);
+                return b ? <BookingStatusBadge status={b.status} /> : null;
+              })()}
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-slate-600">
+              <span className="font-semibold text-slate-700">Provenance:</span> {clip(inboxLead.sourceDetail, 200)}
+            </p>
+
+            <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-700">Last outbound</p>
+                <p className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{selectedThread.lastOutboundSnippet}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-slate-700">Their reply</p>
+                <p className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{selectedThread.inboundSnippet}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-medium capitalize text-indigo-900">
+                  {selectedThread.classification.replace(/_/g, " ")}
+                </span>
+                <span className="text-[11px] text-slate-600">{(selectedThread.confidence * 100).toFixed(0)}% model confidence</span>
+              </div>
+              <p className="text-[11px] text-slate-600">Next step: {selectedThread.recommendedNext}</p>
+            </div>
+
+            {inboxLead.latestInbound?.needsReview && (
+              <div className="mt-3 space-y-2 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm">
+                <p className="font-medium text-orange-900">Review queue</p>
+                <AutomationAuditBadges
+                  needsReview={inboxLead.latestInbound.needsReview}
+                  automationAllowed={inboxLead.latestInbound.automationAllowed ?? false}
+                  automationBlockedReason={inboxLead.latestInbound.automationBlockedReason}
+                  mixedIntent={inboxLead.latestInbound.mixedIntent}
+                />
+                <p className="text-[11px] text-slate-700">{inboxLead.latestInbound.classificationReason}</p>
+                {inboxLead.latestInbound.suggestedReplyDraft && (
+                  <div className="max-h-36 overflow-y-auto rounded border border-orange-100 bg-white p-2 text-xs whitespace-pre-wrap text-slate-800">
+                    {inboxLead.latestInbound.suggestedReplyDraft}
+                  </div>
+                )}
+                <textarea
+                  className="w-full rounded border border-orange-200 bg-white p-2 text-xs"
+                  rows={4}
+                  value={reviewEdit || inboxLead.latestInbound?.suggestedReplyDraft || ""}
+                  onChange={(e) => setReviewEdit(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white"
+                    onClick={() => {
+                      const d = inboxLead.latestInbound?.suggestedReplyDraft || "";
+                      void vm.sendReviewReply(inboxLead.id, d, inboxLead.latestInbound?.id);
+                    }}
+                  >
+                    Approve &amp; send
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-orange-400 bg-white px-3 py-1.5 text-xs font-semibold text-orange-900"
+                    onClick={() =>
+                      void vm.sendReviewReply(
+                        inboxLead.id,
+                        reviewEdit || inboxLead.latestInbound?.suggestedReplyDraft || "",
+                        inboxLead.latestInbound?.id
+                      )
+                    }
+                  >
+                    Edit &amp; send
+                  </button>
+                  <input
+                    type="date"
+                    className="rounded border px-2 py-1 text-xs"
+                    onChange={(e) => e.target.value && void vm.snoozeLeadClient(inboxLead.id, new Date(e.target.value).toISOString())}
+                  />
+                  <span className="self-center text-[10px] text-slate-600">Snooze</span>
+                  <button
+                    type="button"
+                    className="rounded-md border border-rose-200 px-3 py-1.5 text-xs text-rose-800"
+                    onClick={() => void vm.markNotInterestedClient(inboxLead.id)}
+                  >
+                    Not interested
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function DashboardApp({
+  initialLeads,
+  initialCampaigns,
+  initialInboxThreads,
+  initialPhase3Metrics,
+  initialBookingLinkConfigured = true,
+  initialBookingLinkDisplay = "",
+  initialBookingReplyPreview = "",
+  importSummary
+}: {
+  initialLeads: Lead[];
+  initialCampaigns: Campaign[];
+  initialInboxThreads: InboxThread[];
+  initialPhase3Metrics: Phase3Metrics;
+  initialBookingLinkConfigured?: boolean;
+  initialBookingLinkDisplay?: string;
+  initialBookingReplyPreview?: string;
+  importSummary: ImportSummary;
+}) {
+  const vm = useDashboard(
+    initialLeads,
+    initialCampaigns,
+    initialInboxThreads,
+    initialPhase3Metrics,
+    initialBookingLinkConfigured,
+    initialBookingLinkDisplay,
+    initialBookingReplyPreview
+  );
+  const [simulationLeadId, setSimulationLeadId] = useState<string | null>(() => initialLeads[0]?.id ?? null);
+  const [simReplyDraft, setSimReplyDraft] = useState("");
+
+  useEffect(() => {
+    if (!vm.leads.length) return;
+    if (simulationLeadId && vm.leads.some((l) => l.id === simulationLeadId)) return;
+    const top = [...vm.leads].sort((a, b) => b.score - a.score)[0];
+    setSimulationLeadId(top?.id ?? null);
+  }, [vm.leads, simulationLeadId]);
+  const [campaignName, setCampaignName] = useState("Kitchen Intro Sprint");
+  const [campaignIncludeBelow71, setCampaignIncludeBelow71] = useState(false);
+  const [campaignIncludeVeryPoor, setCampaignIncludeVeryPoor] = useState(false);
+  const [campaignConfirmLow, setCampaignConfirmLow] = useState(false);
+  const [campaignOverrideVerify, setCampaignOverrideVerify] = useState(false);
+  const [activeView, setActiveView] = useState<(typeof SIDEBAR_VIEWS)[number]>("dashboard");
+  const [dashboardTab, setDashboardTab] = useState<"active" | "pool" | "lost">("active");
+  const [inboxLeadId, setInboxLeadId] = useState<string | null>(null);
+  const [inboxTab, setInboxTab] = useState<(typeof INBOX_TABS)[number]>("Needs Review");
+  const [reviewEdit, setReviewEdit] = useState("");
+  const [calWebhookTest, setCalWebhookTest] = useState<string | null>(null);
+  const [isCalWebhookTesting, setIsCalWebhookTesting] = useState(false);
+  const inboxLead = vm.leads.find((l) => l.id === inboxLeadId) ?? null;
+
+  const inboxByTab = useMemo(() => {
+    const map = {} as Record<(typeof INBOX_TABS)[number], InboxThread[]>;
+    for (const tab of INBOX_TABS) {
+      map[tab] = vm.inboxThreads.filter((t) => {
+        const lead = vm.leads.find((l) => l.id === t.leadId);
+        return inboxTabMatches(t, lead, tab);
+      });
+    }
+    return map;
+  }, [vm.inboxThreads, vm.leads]);
+
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(vm.filtered, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gloria-leads-export.json";
+    a.click();
+  };
+  const selectedLeads = vm.leads.filter((l) => vm.selectedIds.includes(l.id));
+  const bookingLinkPreview = vm.bookingLinkDisplay || appConfig.bookingLink || "";
+  const campaignSequencePreview = useMemo(() => getCampaignSequencePreview(bookingLinkPreview), [bookingLinkPreview]);
+  const firstTouchLaunchSamples = useMemo(
+    () =>
+      selectedLeads.slice(0, 5).map((lead) => ({
+        lead,
+        rendered: renderFirstTouchForLead(lead, bookingLinkPreview)
+      })),
+    [selectedLeads, bookingLinkPreview]
+  );
+
+  const launchAddressOpts = useMemo(
+    () => ({
+      includeBelowOutreachMin: campaignIncludeBelow71,
+      includeVeryPoorAddress: campaignIncludeVeryPoor,
+      confirmLowAddressRisk: campaignConfirmLow,
+      includeUnverifiedHighScore: campaignOverrideVerify
+    }),
+    [campaignIncludeBelow71, campaignIncludeVeryPoor, campaignConfirmLow, campaignOverrideVerify]
+  );
+
+  const campaignAddressPreview = useMemo(() => {
+    const strict = {
+      includeBelowOutreachMin: false,
+      includeVeryPoorAddress: false,
+      confirmLowAddressRisk: false
+    };
+    const bands = { strong: 0, good: 0, caution: 0, weak: 0, poor: 0, unknown: 0 };
+    let excludedByDefault = 0;
+    let excludedVeryPoor = 0;
+    const riskyWithNotes: { id: string; name: string; score: number | null; notes: string }[] = [];
+    for (const lead of selectedLeads) {
+      bands[addressConfidenceBand(lead.addressConfidence)] += 1;
+      const eligStrict = campaignSendEligibility(lead, strict);
+      if (!eligStrict.eligible) {
+        if (eligStrict.reason === "very_poor_address") excludedVeryPoor += 1;
+        else excludedByDefault += 1;
+      }
+      const s = lead.addressConfidence;
+      const n = s === null || s === undefined || Number.isNaN(s) ? null : Math.round(s);
+      if ((n === null || n < OUTREACH_ADDRESS_MIN_DEFAULT) && lead.confidenceNotes?.trim()) {
+        riskyWithNotes.push({
+          id: lead.id,
+          name: lead.fullName,
+          score: n,
+          notes: lead.confidenceNotes.trim()
+        });
+      }
+    }
+    const wouldSendNow = selectedLeads.filter((l) => isEligibleForCampaignSend(l, launchAddressOpts)).length;
+    const needsConfirmEstimate = selectedLeads.filter((l) => {
+      if (!isEligibleForCampaignSend(l, launchAddressOpts)) return false;
+      const v = l.addressConfidence;
+      const nn = v === null || v === undefined || Number.isNaN(v) ? null : Math.round(v);
+      return nn === null || nn <= 50;
+    }).length;
+    return {
+      bands,
+      excludedByDefault,
+      excludedVeryPoor,
+      riskyWithNotes,
+      wouldSendNow,
+      needsConfirmEstimate
+    };
+  }, [selectedLeads, launchAddressOpts]);
+
+  const lowAddressInSelection = useMemo(
+    () =>
+      selectedLeads.some((l) => {
+        const v = l.addressConfidence;
+        if (v === null || v === undefined || Number.isNaN(v)) return true;
+        return Math.round(v) < OUTREACH_ADDRESS_MIN_DEFAULT;
+      }),
+    [selectedLeads]
+  );
+
+  const veryPoorInSelection = useMemo(
+    () =>
+      selectedLeads.some((l) => {
+        const v = l.addressConfidence;
+        if (v === null || v === undefined || Number.isNaN(v)) return false;
+        return Math.round(v) <= OUTREACH_ADDRESS_VERY_POOR_MAX;
+      }),
+    [selectedLeads]
+  );
+
+  const selectionNeedsLowAddressConfirm = useMemo(
+    () =>
+      selectedLeads.some(
+        (l) => isEligibleForCampaignSend(l, launchAddressOpts) && leadNeedsLowAddressConfirm(l)
+      ),
+    [selectedLeads, launchAddressOpts]
+  );
+
+  const unapprovedHighScoreInSelection = useMemo(
+    () =>
+      selectedLeads.filter(
+        (l) =>
+          l.score >= DEPLOY_VERIFY_MIN_SCORE &&
+          l.deployVerifyVerdict !== "approved" &&
+          l.deployVerifyVerdict !== "rejected"
+      ).length,
+    [selectedLeads]
+  );
+
+  const singleSelectedLead =
+    vm.selectedIds.length === 1 ? vm.leads.find((l) => l.id === vm.selectedIds[0]) : undefined;
+  const conversionBy = (key: "leadType" | "source" | "priorityTier") =>
+    Object.entries(
+      vm.leads.reduce<Record<string, { total: number; booked: number }>>((acc, lead) => {
+        const k = lead[key];
+        acc[k] = acc[k] ?? { total: 0, booked: 0 };
+        acc[k].total += 1;
+        if (lead.status === "Booked") acc[k].booked += 1;
+        return acc;
+      }, {})
+    );
+  const isLostLead = (l: Lead) => l.status === "Not Interested" || l.doNotContact;
+
+  /** Replied and still in play (not retired to lost). */
+  const dashboardActiveLeads = useMemo(
+    () => vm.leads.filter((l) => (l.replyHistory?.length ?? 0) > 0 && !isLostLead(l)),
+    [vm.leads]
+  );
+  /** Replied then marked not interested / DNC — archived pipeline. */
+  const dashboardLostLeads = useMemo(
+    () => vm.leads.filter((l) => (l.replyHistory?.length ?? 0) > 0 && isLostLead(l)),
+    [vm.leads]
+  );
+  const dashboardLeadPool = useMemo(
+    () => vm.leads.filter((l) => (l.replyHistory?.length ?? 0) === 0),
+    [vm.leads]
+  );
+  const dashboardRows =
+    dashboardTab === "active" ? dashboardActiveLeads : dashboardTab === "pool" ? dashboardLeadPool : dashboardLostLeads;
+  const sortedDashboardRows = useMemo(() => {
+    const rows = [...dashboardRows];
+    const byLastReplyDesc = (a: Lead, b: Lead) => {
+      const ta = lastReplyAtIso(a);
+      const tb = lastReplyAtIso(b);
+      return (tb ? new Date(tb).getTime() : 0) - (ta ? new Date(ta).getTime() : 0);
+    };
+    const notInterestedLast = (a: Lead, b: Lead) => {
+      const ai = a.status === "Not Interested" ? 1 : 0;
+      const bi = b.status === "Not Interested" ? 1 : 0;
+      return ai - bi;
+    };
+    if (dashboardTab === "pool") {
+      rows.sort((a, b) => {
+        const ni = notInterestedLast(a, b);
+        if (ni !== 0) return ni;
+        return b.score - a.score;
+      });
+    } else if (dashboardTab === "lost") {
+      rows.sort(byLastReplyDesc);
+    } else {
+      rows.sort((a, b) => {
+        const ni = notInterestedLast(a, b);
+        if (ni !== 0) return ni;
+        return byLastReplyDesc(a, b);
+      });
+    }
+    return rows;
+  }, [dashboardRows, dashboardTab]);
+
+  const bookingInviteList = useMemo(() => {
+    const rows: { lead: Lead; b: Lead["bookingHistory"][number]; bucket: ReturnType<typeof classifyBookingInvite> }[] = [];
+    for (const lead of vm.leads) {
+      for (const b of lead.bookingHistory) {
+        rows.push({ lead, b, bucket: classifyBookingInvite(lead, b) });
+      }
+    }
+    return rows;
+  }, [vm.leads]);
+
+  return (
+    <div className="min-h-screen">
+      <div className="grid min-h-screen grid-cols-[250px_1fr]">
+        <aside className="border-r border-slate-200 bg-slate-900 p-4 text-slate-100">
+          <div className="mb-6 flex items-center gap-3">
+            <img src="/gloria-logo.svg" alt="Gloria logo" className="h-10 w-10 rounded bg-white p-1" />
+            <div>
+              <p className="font-semibold">{appConfig.companyName}</p>
+              <p className="text-xs text-slate-400">1300 Schwab Rd, Hatfield, PA</p>
+            </div>
+          </div>
+          <nav className="space-y-2 text-sm">
+            {SIDEBAR_VIEWS.map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setActiveView(v)}
+                className={`block w-full rounded px-3 py-2 text-left capitalize ${activeView === v ? "bg-slate-700" : "hover:bg-slate-800"}`}
+              >
+                {v}
+              </button>
+            ))}
+            <Link href="/setup/cal" className="block rounded px-3 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white">
+              Cal.com setup
+            </Link>
+          </nav>
+          <div className="mt-6 rounded border border-slate-700 p-3 text-xs">
+            <p className="font-semibold text-slate-300">Source Definitions</p>
+            <p>CSV Import = directly from provided file</p>
+            <p>Online Enriched = existing lead enhanced using online data</p>
+            <p>Scraped / External = sourced outside CSV</p>
+            <p>Manual = user-created</p>
+          </div>
+        </aside>
+
+        <main className="p-4">
+          <header className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+            <div>
+              <h1 className="text-xl font-semibold">Lead Ops Command Center</h1>
+              <p className="text-sm text-slate-600">Qualified lead launcher, reply triage, and remote intro booking flow.</p>
+            </div>
+            <button onClick={exportData} className="rounded bg-brand px-3 py-2 text-sm font-semibold text-white">Export (Includes Source)</button>
+          </header>
+          {!vm.bookingLinkConfigured && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <p className="font-semibold">BOOKING_LINK not configured</p>
+              <p className="mt-1 text-xs">
+                Set <code className="rounded bg-white/80 px-1">BOOKING_LINK</code> in <code className="rounded bg-white/80 px-1">.env.local</code> to your real
+                Cal.com URL (see <Link href="/setup/cal" className="font-medium underline">Cal.com setup</Link>). Until then, booking automation is blocked and
+                drafts show a placeholder. Check server logs for warnings.
+              </p>
+            </div>
+          )}
+
+          {activeView === "leads" && (
+            <section className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-11">
+              {[
+                ["Total Leads", vm.metrics.totalLeads],
+                ["Qualified", vm.metrics.qualifiedLeads],
+                ["CSV Leads", vm.metrics.csvLeads],
+                ["External", vm.metrics.externalLeads],
+                ["Online Enriched", vm.metrics.enrichedLeads],
+                ["Campaigns", vm.metrics.campaignsLaunched],
+                ["Emails Sent", vm.metrics.emailsSent],
+                ["Replies", vm.metrics.replies],
+                ["Positive Replies", vm.metrics.positiveReplies],
+                ["Booking Sent", vm.metrics.bookingSent],
+                ["Booked", vm.metrics.booked],
+                ["Addr score 86+", vm.addressMetrics.verified],
+                ["Addr score 71+", vm.addressMetrics.good],
+                ["Addr &lt;71 (review)", vm.addressMetrics.low],
+                ["Addr ≤10 (very poor)", vm.addressMetrics.veryPoor]
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-md border border-slate-200 bg-white px-1.5 py-1 shadow-sm"
+                >
+                  <p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{label}</p>
+                  <p className="text-sm font-bold tabular-nums leading-tight text-slate-900">{value}</p>
+                </div>
+              ))}
+            </section>
+          )}
+          {activeView === "leads" && (
+            <section className="mb-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
+              <p className="font-semibold text-slate-800">
+                <span title={ADDRESS_CONFIDENCE_TOOLTIP} className="cursor-help border-b border-dotted border-slate-400">
+                  Address confidence bands
+                </span>{" "}
+                (selected CSV pass)
+              </p>
+              <p className="mt-1">
+                Strong 86+: {vm.addressMetrics.bands.strong} · Good 71–85: {vm.addressMetrics.bands.good} · Caution 51–70:{" "}
+                {vm.addressMetrics.bands.caution} · Weak 31–50: {vm.addressMetrics.bands.weak} · Poor 0–30:{" "}
+                {vm.addressMetrics.bands.poor} · Unknown: {vm.addressMetrics.bands.unknown}
+              </p>
+              <p className="mt-1 font-medium text-slate-800">
+                Outreach-ready by classification (addr ≥{OUTREACH_ADDRESS_MIN_DEFAULT}, not DNC): designer/architect{" "}
+                {vm.addressMetrics.byClass.designer_architect} · builder/contractor {vm.addressMetrics.byClass.builder_contractor} · cabinet partner{" "}
+                {vm.addressMetrics.byClass.cabinet_shop_partner} · homeowner {vm.addressMetrics.byClass.homeowner}
+              </p>
+            </section>
+          )}
+          {activeView === "leads" && (
+          <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+            <p className="mb-2 text-sm font-semibold text-slate-800">
+              Phase 3 · Reply &amp; booking intelligence
+            </p>
+            <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
+              {[
+                ["Inbound replies", vm.phase3Metrics.repliesReceived],
+                ["Positive / link asks", vm.phase3Metrics.positiveReplies],
+                ["Booking invites sent", vm.phase3Metrics.bookingInvitesSent],
+                ["Booked meetings", vm.phase3Metrics.bookedMeetings],
+                ["Not interested", vm.phase3Metrics.notInterested],
+                ["Suppressed", vm.phase3Metrics.unsubscribes]
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                  <p className="text-[11px] text-slate-500">{label}</p>
+                  <p className="text-lg font-semibold">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="text-xs text-slate-600">
+                <p className="font-medium text-slate-800">Reply rate by source</p>
+                {Object.entries(vm.phase3Metrics.replyRateBySource).map(([k, v]) => (
+                  <p key={k}>
+                    {k}: {v.replied}/{v.contacted} replied
+                  </p>
+                ))}
+              </div>
+              <div className="text-xs text-slate-600">
+                <p className="font-medium text-slate-800">Reply rate by lead type</p>
+                {Object.entries(vm.phase3Metrics.replyRateByLeadType).map(([k, v]) => (
+                  <p key={k}>
+                    {k}: {v.replied}/{v.contacted}
+                  </p>
+                ))}
+              </div>
+              <div className="text-xs text-slate-600">
+                <p className="font-medium text-slate-800">Booking rate by priority tier</p>
+                {Object.entries(vm.phase3Metrics.bookingRateByTier).map(([k, v]) => (
+                  <p key={k}>
+                    {k}: {v.booked}/{v.eligible} booked
+                  </p>
+                ))}
+              </div>
+            </div>
+          </section>
+          )}
+          {activeView === "leads" && (
+            <section className="mb-4 grid grid-cols-4 gap-3">
+              {[
+                ["CSV Import", vm.sourceCounts["CSV Import"] ?? 0],
+                ["Online Enriched", vm.sourceCounts["Online Enriched"] ?? 0],
+                ["Scraped / External", vm.sourceCounts["Scraped / External"] ?? 0],
+                ["Manual", vm.sourceCounts.Manual ?? 0]
+              ].map(([label, value]) => (
+                <div key={label} className="card">
+                  <p className="text-xs text-slate-500">Source: {label}</p>
+                  <p className="text-2xl font-bold">{value}</p>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {activeView === "leads" && (
+            <section className="mb-4 card text-sm">
+              <p className="font-semibold">CSV Import Summary</p>
+              <p>
+                File: <strong>resources/{importSummary.sourceFile}</strong> · Total rows: {importSummary.totalRows} | Valid rows:{" "}
+                {importSummary.validRows} | Skipped: {importSummary.skippedRows} | Duplicates: {importSummary.duplicateRows}
+              </p>
+            </section>
+          )}
+
+          {activeView === "leads" && (
+            <section className="card overflow-hidden border-t-4 border-slate-800/15 bg-gradient-to-b from-white to-slate-50 shadow-sm">
+                <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <h2 className="text-lg font-semibold text-slate-900">Lead library</h2>
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    Sorted by <strong>score</strong> (highest first). Filter, multi-select with checkboxes, preview first-touch copy, and launch campaigns to the selected audience.
+                  </p>
+                </div>
+                <div className="p-4">
+                <div className="mb-3 grid grid-cols-4 gap-2">
+                  <input className="rounded border p-2 text-sm" placeholder="Search name/company/email" value={vm.filters.query} onChange={(e) => vm.setFilters((f) => ({ ...f, query: e.target.value }))} />
+                  <select className="rounded border p-2 text-sm" value={vm.filters.source} onChange={(e) => vm.setFilters((f) => ({ ...f, source: e.target.value as typeof f.source }))}>
+                    <option value="all">All sources</option><option>CSV Import</option><option>Online Enriched</option><option>Scraped / External</option><option>Manual</option>
+                  </select>
+                  <select className="rounded border p-2 text-sm" value={vm.filters.priorityTier} onChange={(e) => vm.setFilters((f) => ({ ...f, priorityTier: e.target.value as typeof f.priorityTier }))}>
+                    <option value="all">All priorities</option><option>Tier A</option><option>Tier B</option><option>Tier C</option><option>Tier D</option>
+                  </select>
+                  <select className="rounded border p-2 text-sm" value={vm.filters.status} onChange={(e) => vm.setFilters((f) => ({ ...f, status: e.target.value as typeof f.status }))}>
+                    <option value="all">All status</option><option>New</option><option>In Campaign</option><option>Interested</option><option>Needs Review</option><option>Booking Sent</option><option>Booked</option><option>Not Interested</option><option>Not Now</option>
+                  </select>
+                </div>
+                <div className="mb-3 grid grid-cols-4 gap-2">
+                  <select className="rounded border p-2 text-sm" value={vm.filters.leadType} onChange={(e) => vm.setFilters((f) => ({ ...f, leadType: e.target.value as typeof f.leadType }))}>
+                    <option value="all">All lead types</option><option>designer</option><option>architect</option><option>builder</option><option>cabinet shop</option><option>homeowner</option><option>commercial builder</option>
+                  </select>
+                  <select className="rounded border p-2 text-sm" value={vm.filters.projectTier} onChange={(e) => vm.setFilters((f) => ({ ...f, projectTier: e.target.value as typeof f.projectTier }))}>
+                    <option value="all">All project tiers</option><option>Sub-$20k</option><option>$20k-$40k</option><option>$40k-$100k</option><option>$100k-$300k</option><option>$300k+</option>
+                  </select>
+                  <select className="rounded border p-2 text-sm" value={vm.filters.contacted} onChange={(e) => vm.setFilters((f) => ({ ...f, contacted: e.target.value as typeof f.contacted }))}>
+                    <option value="all">Contacted + not contacted</option><option value="contacted">Contacted</option><option value="not_contacted">Not contacted</option>
+                  </select>
+                  <input className="rounded border p-2 text-sm" type="number" value={vm.filters.maxDistance} onChange={(e) => vm.setFilters((f) => ({ ...f, maxDistance: Number(e.target.value) || 180 }))} placeholder="Max distance minutes" />
+                </div>
+                <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-6">
+                  <select
+                    className="rounded border p-2 text-sm"
+                    value={vm.filters.addressQuick}
+                    onChange={(e) =>
+                      vm.setFilters((f) => ({
+                        ...f,
+                        addressQuick: e.target.value as typeof f.addressQuick
+                      }))
+                    }
+                  >
+                    <option value="all">Address: all</option>
+                    <option value="verified_86">Verified / strong (≥86)</option>
+                    <option value="reachable_71">Reachable for outreach (≥71)</option>
+                    <option value="needs_review_under_71">Needs review (&lt;71 or unknown)</option>
+                  </select>
+                  <select
+                    className="rounded border p-2 text-sm"
+                    value={vm.filters.addressBand}
+                    onChange={(e) =>
+                      vm.setFilters((f) => ({
+                        ...f,
+                        addressBand: e.target.value as typeof f.addressBand
+                      }))
+                    }
+                  >
+                    <option value="all">Band: any</option>
+                    <option value="strong">Strong 86–100</option>
+                    <option value="good">Good 71–85</option>
+                    <option value="caution">Caution 51–70</option>
+                    <option value="weak">Weak 31–50</option>
+                    <option value="poor">Poor 0–30</option>
+                    <option value="unknown">Unknown</option>
+                  </select>
+                  <input
+                    className="rounded border p-2 text-sm"
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="Addr min"
+                    value={vm.filters.addressConfidenceMin}
+                    onChange={(e) => vm.setFilters((f) => ({ ...f, addressConfidenceMin: e.target.value }))}
+                  />
+                  <input
+                    className="rounded border p-2 text-sm"
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="Addr max"
+                    value={vm.filters.addressConfidenceMax}
+                    onChange={(e) => vm.setFilters((f) => ({ ...f, addressConfidenceMax: e.target.value }))}
+                  />
+                  <p className="col-span-2 flex items-center text-[11px] text-slate-600 lg:col-span-2">
+                    <span title={ADDRESS_CONFIDENCE_TOOLTIP} className="cursor-help border-b border-dotted border-slate-400">
+                      What is address confidence?
+                    </span>
+                  </p>
+                </div>
+
+                <div className="max-h-[560px] overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-50">
+                      <tr className="text-left text-xs text-slate-500">
+                        <th className="p-2"><input type="checkbox" onChange={(e) => vm.setSelectedIds(e.target.checked ? vm.filtered.map((l) => l.id) : [])} /></th>
+                        <th className="p-2">Lead</th><th className="p-2">Source</th><th className="p-2">Status</th>
+                        <th className="p-2" title={ADDRESS_CONFIDENCE_TOOLTIP}>
+                          Addr %
+                        </th>
+                        <th className="p-2">Readiness</th>
+                        <th className="p-2">Score</th><th className="p-2">Tier</th><th className="p-2">Distance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...vm.filtered].sort((a, b) => b.score - a.score).map((lead) => (
+                        <tr key={lead.id} className="border-t hover:bg-slate-50">
+                          <td className="p-2"><input type="checkbox" checked={vm.selectedIds.includes(lead.id)} onChange={(e) => vm.setSelectedIds((ids) => e.target.checked ? [...ids, lead.id] : ids.filter((id) => id !== lead.id))} /></td>
+                          <td className="p-2">
+                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="text-xs text-slate-500">{lead.company || lead.email}</p>
+                          </td>
+                          <td className="p-2">
+                            <div className="flex flex-col gap-1">
+                              <SourceBadge source={lead.source} />
+                              {lead.enrichmentStatus === "enriched" && (
+                                <span className="badge bg-amber-100 text-amber-900">Enriched</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2"><StatusBadge status={lead.status} /></td>
+                          <td className="p-2">
+                            <AddressConfidenceBadge score={lead.addressConfidence} />
+                          </td>
+                          <td className="p-2 text-[11px] text-slate-700">
+                            <span
+                              className={
+                                outreachReadiness(lead).tier === "ready"
+                                  ? "text-emerald-800"
+                                  : outreachReadiness(lead).tier === "caution"
+                                    ? "text-amber-900"
+                                    : "text-rose-800"
+                              }
+                            >
+                              {outreachReadiness(lead).label}
+                            </span>
+                          </td>
+                          <td className="p-2 font-semibold">{lead.score}</td>
+                          <td className="p-2">{lead.priorityTier}</td>
+                          <td className="p-2">{lead.distanceMinutes} min</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {singleSelectedLead ? (
+                  <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-sm text-slate-800">
+                    <p className="font-semibold text-indigo-950">Lead detail · {singleSelectedLead.fullName}</p>
+                    <p className="mt-1 text-xs">
+                      <strong>Outreach readiness:</strong> {outreachReadiness(singleSelectedLead).label} —{" "}
+                      {outreachReadiness(singleSelectedLead).factors.join(" · ")}
+                    </p>
+                    <p className="mt-2 text-xs">
+                      <strong>Confidence notes:</strong>{" "}
+                      {singleSelectedLead.confidenceNotes?.trim() ? (
+                        singleSelectedLead.confidenceNotes
+                      ) : (
+                        <span className="text-slate-500">None on file.</span>
+                      )}
+                    </p>
+                  </div>
+                ) : null}
+
+                {lowAddressInSelection && !campaignIncludeBelow71 ? (
+                  <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    Selection includes leads with address confidence under {OUTREACH_ADDRESS_MIN_DEFAULT} or unknown scores. They are{" "}
+                    <strong>excluded by default</strong>. Check <strong>Include &lt;71 addresses</strong> to allow them (very poor ≤{OUTREACH_ADDRESS_VERY_POOR_MAX}{" "}
+                    also needs its checkbox).
+                  </div>
+                ) : null}
+                {veryPoorInSelection && campaignIncludeBelow71 && !campaignIncludeVeryPoor ? (
+                  <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    Selection includes very poor addresses (≤{OUTREACH_ADDRESS_VERY_POOR_MAX}). Enable <strong>Include very poor addresses</strong> to send to those
+                    rows.
+                  </div>
+                ) : null}
+                {selectionNeedsLowAddressConfirm && !campaignConfirmLow ? (
+                  <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-950">
+                    Some selected leads have address confidence ≤50 or unknown. Check <strong>I confirm low / unknown address risk</strong> before launch.
+                  </div>
+                ) : null}
+
+                <div className="mt-3 flex flex-col gap-2 border-t pt-3 sm:flex-row sm:flex-wrap sm:items-center">
+                  <input className="rounded border p-2 text-sm" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} />
+                  <label className="flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={campaignIncludeBelow71}
+                      onChange={(e) => setCampaignIncludeBelow71(e.target.checked)}
+                    />
+                    Include &lt;71 address scores (override default)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={campaignIncludeVeryPoor}
+                      onChange={(e) => setCampaignIncludeVeryPoor(e.target.checked)}
+                    />
+                    Include very poor addresses (≤10)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-700">
+                    <input type="checkbox" checked={campaignConfirmLow} onChange={(e) => setCampaignConfirmLow(e.target.checked)} />
+                    I confirm low / unknown address risk (≤50)
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-amber-900">
+                    <input
+                      type="checkbox"
+                      checked={campaignOverrideVerify}
+                      onChange={(e) => setCampaignOverrideVerify(e.target.checked)}
+                    />
+                    Send to score ≥{DEPLOY_VERIFY_MIN_SCORE} without Verify approval (override)
+                  </label>
+                  {unapprovedHighScoreInSelection > 0 && !campaignOverrideVerify ? (
+                    <p className="w-full text-xs text-amber-800">
+                      {unapprovedHighScoreInSelection} selected lead(s) need <strong>Verify</strong> thumbs-up before send, or check the override above.
+                    </p>
+                  ) : null}
+                  <button
+                    onClick={async () => {
+                      const data = await vm.launchCampaign(campaignName, launchAddressOpts);
+                      if (data && "ok" in data && data.ok && data.result) {
+                        const r = data.result;
+                        window.alert(
+                          `${r.dryRun ? "Dry run" : "Live send"} complete: ${r.sentCount} sent · limit skips ${r.skippedByLimit} · ` +
+                            `addr policy ${r.skippedByAddressPolicy} · very poor ${r.skippedVeryPoor} · verify gate ${r.skippedByDeployVerify ?? 0} · DNC ${r.skippedDoNotContact}`
+                        );
+                      } else if (data && "ok" in data && !data.ok) {
+                        window.alert((data as { error?: string }).error ?? "Launch blocked.");
+                      }
+                    }}
+                    className="rounded bg-brand px-3 py-2 text-sm font-semibold text-white"
+                  >
+                    Launch Campaign ({vm.selectedIds.length})
+                  </button>
+                </div>
+
+                {selectedLeads.length > 0 ? (
+                  <div className="mt-3 rounded border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                    <p className="font-semibold text-slate-900">Campaign · address selection summary</p>
+                    <p className="mt-1">
+                      Bands: strong {campaignAddressPreview.bands.strong} · good {campaignAddressPreview.bands.good} · caution{" "}
+                      {campaignAddressPreview.bands.caution} · weak {campaignAddressPreview.bands.weak} · poor {campaignAddressPreview.bands.poor} · unknown{" "}
+                      {campaignAddressPreview.bands.unknown}
+                    </p>
+                    <p className="mt-1">
+                      Excluded by default (need &lt;71 override): {campaignAddressPreview.excludedByDefault} · excluded very poor (≤10, need checkbox):{" "}
+                      {campaignAddressPreview.excludedVeryPoor} · would send with current checkboxes: {campaignAddressPreview.wouldSendNow}{" "}
+                      (includes Verify gate for score ≥{DEPLOY_VERIFY_MIN_SCORE})
+                    </p>
+                    {unapprovedHighScoreInSelection > 0 && !campaignOverrideVerify ? (
+                      <p className="mt-1 text-amber-900">
+                        Verify: {unapprovedHighScoreInSelection} selected high-score lead(s) not approved — they will be skipped unless you override.
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-amber-900">
+                      If launch includes scores ≤50 (or unknown), check the confirmation box ({campaignAddressPreview.needsConfirmEstimate} lead(s) may need
+                      it).
+                    </p>
+                    {campaignAddressPreview.riskyWithNotes.length ? (
+                      <div className="mt-2 border-t border-slate-100 pt-2">
+                        <p className="font-medium text-slate-800">Confidence notes (under {OUTREACH_ADDRESS_MIN_DEFAULT} or unknown)</p>
+                        <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto">
+                          {campaignAddressPreview.riskyWithNotes.map((x) => (
+                            <li key={x.id}>
+                              <span className="font-medium">{x.name}</span> ({x.score ?? "—"}) — {x.notes}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <p className="font-semibold text-slate-900">Launch preview — first-touch (up to 5 leads)</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Copy is generated from <strong>lead type → classification</strong>. City appears only when <strong>address confidence ≥86</strong> or CRM
+                    / enrichment location trust is high. Business score does not change wording.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-700">Audience selected: {selectedLeads.length}</p>
+                  {firstTouchLaunchSamples.length === 0 ? (
+                    <p className="mt-2 text-xs text-amber-800">Select at least one lead to preview copy.</p>
+                  ) : (
+                    <ul className="mt-3 space-y-3">
+                      {firstTouchLaunchSamples.map(({ lead, rendered }) => (
+                        <li key={lead.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                          <p className="font-medium text-slate-900">
+                            {lead.fullName} · <span className="capitalize text-slate-600">{lead.leadType.replace(/_/g, " ")}</span> ·{" "}
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                              {rendered.classification}
+                            </span>
+                            {rendered.locationOmitted ? (
+                              <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                                location omitted
+                              </span>
+                            ) : null}{" "}
+                            <span className="text-slate-500">{rendered.templateId}</span>
+                          </p>
+                          <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-slate-800">
+                            {rendered.body}
+                          </pre>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                </div>
+            </section>
+          )}
+
+          {activeView === "dashboard" && (
+            <section className="card">
+              <div className="mb-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <p className="font-semibold text-slate-800">
+                  Address quality · verified {vm.addressMetrics.verified} · 71+ {vm.addressMetrics.good} · needs review (&lt;71){" "}
+                  {vm.addressMetrics.low} · very poor (≤10) {vm.addressMetrics.veryPoor}
+                </p>
+                <p className="mt-1" title={ADDRESS_CONFIDENCE_TOOLTIP}>
+                  First-touch location lines only when addr ≥ 86 or CRM/enrichment location trust is high.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Dashboard</h2>
+                  <p className="text-xs text-slate-600">
+                    <strong>Active leads</strong> replied and are still in play. <strong>Retire to lost</strong> marks them not interested (or DNC) and moves them to{" "}
+                    <strong>Lost leads</strong>. <strong>Lead pool</strong> has no reply yet. Open a row to jump to <strong>Leads</strong> with that contact selected for outreach, or to <strong>Inbox</strong> when they need review.
+                  </p>
+                </div>
+                <div className="text-right text-xs text-slate-600">
+                  <div>Active: {dashboardActiveLeads.length}</div>
+                  <div>Lost: {dashboardLostLeads.length}</div>
+                  <div>Lead pool: {dashboardLeadPool.length}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-100 pb-3">
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab("active")}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    dashboardTab === "active" ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Active leads
+                  <span className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "active" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                    {dashboardActiveLeads.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab("lost")}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    dashboardTab === "lost" ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Lost leads
+                  <span className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "lost" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                    {dashboardLostLeads.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab("pool")}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    dashboardTab === "pool" ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Lead pool
+                  <span className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "pool" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                    {dashboardLeadPool.length}
+                  </span>
+                </button>
+              </div>
+
+              <div className="mt-4 overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50">
+                    <tr className="text-left text-xs text-slate-500">
+                      <th className="p-2">Lead</th>
+                      <th className="p-2">Source</th>
+                      <th className="p-2">Status</th>
+                      {dashboardTab === "pool" ? (
+                        <th className="p-2">Outreach</th>
+                      ) : (
+                        <>
+                          <th className="p-2">Last reply</th>
+                          <th className="p-2">Meeting</th>
+                          {dashboardTab === "active" ? <th className="whitespace-nowrap p-2">Actions</th> : null}
+                        </>
+                      )}
+                      <th className="p-2">Score</th>
+                      <th className="p-2">Tier</th>
+                      <th className="p-2">Distance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedDashboardRows.map((lead) => {
+                      const replyIso = lastReplyAtIso(lead);
+                      const mtg = meetingBookingSummary(lead);
+                      return (
+                        <tr
+                          key={lead.id}
+                          className="cursor-pointer border-t hover:bg-slate-50"
+                          onClick={() => {
+                            if (leadNeedsInboxReview(lead)) {
+                              setInboxLeadId(lead.id);
+                              setInboxTab("Needs Review");
+                              setReviewEdit("");
+                              setActiveView("inbox");
+                            } else {
+                              vm.setSelectedIds([lead.id]);
+                              setActiveView("leads");
+                            }
+                          }}
+                        >
+                          <td className="p-2">
+                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="text-xs text-slate-500">{lead.company || lead.email}</p>
+                          </td>
+                          <td className="p-2">
+                            <SourceBadge source={lead.source} />
+                          </td>
+                          <td className="p-2">
+                            <StatusBadge status={lead.status} />
+                          </td>
+                          {dashboardTab === "pool" ? (
+                            <td className="p-2 text-xs text-slate-700">
+                              {lead.outreachHistory.length ? (
+                                <span>{lead.outreachHistory.length} send{lead.outreachHistory.length === 1 ? "" : "s"}</span>
+                              ) : (
+                                <span className="text-slate-400">Not contacted</span>
+                              )}
+                            </td>
+                          ) : (
+                            <>
+                              <td className="p-2 text-xs text-slate-700">
+                                {replyIso ? (
+                                  <>
+                                    <span className="font-medium text-slate-900">{formatRelativeAgo(replyIso)}</span>
+                                    <span className="mt-0.5 block text-[11px] text-slate-500">{new Date(replyIso).toLocaleString()}</span>
+                                  </>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="p-2 text-xs">
+                                <span className="font-medium text-slate-800">{mtg.label}</span>
+                                {mtg.detail ? <span className="mt-0.5 block text-[11px] text-slate-600">{mtg.detail}</span> : null}
+                              </td>
+                              {dashboardTab === "active" ? (
+                                <td className="p-2 align-middle" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    className="whitespace-nowrap rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
+                                    onClick={() => void vm.markNotInterestedClient(lead.id)}
+                                  >
+                                    Retire to lost
+                                  </button>
+                                </td>
+                              ) : null}
+                            </>
+                          )}
+                          <td className="p-2 font-semibold">{lead.score}</td>
+                          <td className="p-2">{lead.priorityTier}</td>
+                          <td className="p-2">{lead.distanceMinutes} min</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {!sortedDashboardRows.length && (
+                  <p className="p-6 text-center text-sm text-slate-500">
+                    {dashboardTab === "active"
+                      ? "No active replies right now. Replies show here until you retire them to lost."
+                      : dashboardTab === "lost"
+                        ? "No lost leads yet. Use Retire to lost on an active lead to archive them here."
+                        : "Lead pool is empty."}
+                  </p>
+                )}
+              </div>
+              <DashboardBookingsCalendar leads={vm.leads} />
+            </section>
+          )}
+
+          {activeView === "campaigns" && (
+            <section className="card mb-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pipeline stats</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                {[
+                  ["Total Leads", vm.metrics.totalLeads],
+                  ["Qualified", vm.metrics.qualifiedLeads],
+                  ["CSV Leads", vm.metrics.csvLeads],
+                  ["External", vm.metrics.externalLeads],
+                  ["Online Enriched", vm.metrics.enrichedLeads],
+                  ["Campaigns", vm.metrics.campaignsLaunched],
+                  ["Emails Sent", vm.metrics.emailsSent],
+                  ["Replies", vm.metrics.replies],
+                  ["Positive Replies", vm.metrics.positiveReplies],
+                  ["Booking Sent", vm.metrics.bookingSent],
+                  ["Booked", vm.metrics.booked]
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded border border-slate-100 bg-slate-50 p-2">
+                    <p className="text-[11px] text-slate-500">{label}</p>
+                    <p className="text-sm font-semibold">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          {activeView === "campaigns" && (
+            <section className="card mb-4">
+              <h2 className="text-lg font-semibold text-slate-900">Email deployment log</h2>
+              <p className="mt-1 text-xs text-slate-600">Each launch batch with recipient coverage where tracked.</p>
+              <ul className="mt-3 divide-y divide-slate-100">
+                {vm.campaigns.map((c) => {
+                  const names = c.recipientNames ?? [];
+                  const showNames = c.sentCount >= 1 && c.sentCount <= 5 && names.length > 0;
+                  return (
+                    <li key={c.id} className="py-3 text-sm">
+                      <p className="font-medium text-slate-900">{c.name}</p>
+                      <p className="text-xs text-slate-600">
+                        Sent: {c.sentCount} · Launched {new Date(c.launchedAt).toLocaleString()}
+                      </p>
+                      {showNames ? (
+                        <p className="mt-1 text-xs text-slate-700">
+                          Recipients: {names.slice(0, 5).join(", ")}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              {!vm.campaigns.length ? <p className="text-sm text-slate-500">No deployments yet.</p> : null}
+            </section>
+          )}
+          {activeView === "campaigns" && (
+            <section className="mb-4">
+              <CampaignSequenceTree
+                bookingLinkDisplay={bookingLinkPreview}
+                initialFollow1={campaignSequencePreview.followUp1}
+                initialFollow2={campaignSequencePreview.followUp2}
+                initialBooking={campaignSequencePreview.bookingReply}
+                initialPricing={campaignSequencePreview.pricingReply}
+                initialInfo={campaignSequencePreview.infoReply}
+              />
+            </section>
+          )}
+          {activeView === "campaigns" && (
+            <section className="mt-4 grid grid-cols-3 gap-3">
+              {[
+                { title: "Conversion by Lead Type", rows: conversionBy("leadType") },
+                { title: "Conversion by Source", rows: conversionBy("source") },
+                { title: "Conversion by Priority Tier", rows: conversionBy("priorityTier") }
+              ].map((group) => (
+                <div key={group.title} className="card">
+                  <p className="mb-2 font-semibold">{group.title}</p>
+                  {group.rows.map(([k, v]) => (
+                    <p key={k} className="text-sm">{k}: {v.booked}/{v.total}</p>
+                  ))}
+                </div>
+              ))}
+            </section>
+          )}
+          {activeView === "inbox" && (
+            <section className="flex flex-col gap-4">
+              <div className="card max-h-[220px] shrink-0 overflow-hidden shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">Priority Inbox</h2>
+                    <p className="text-[11px] text-slate-600">Scroll horizontally to scan threads; full review below.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-3 py-2">
+                  {INBOX_TABS.map((tab) => {
+                    const n = inboxByTab[tab].length;
+                    const active = inboxTab === tab;
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setInboxTab(tab)}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
+                          active ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {tab}
+                        <span className={`rounded-full px-1 py-0 text-[10px] ${active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2 overflow-x-auto px-3 py-2">
+                  {inboxByTab[inboxTab].map((t) => {
+                    const active = inboxLeadId === t.leadId;
+                    return (
+                      <button
+                        key={`${t.leadId}-${t.inboundReplyId}`}
+                        type="button"
+                        onClick={() => {
+                          setInboxLeadId(t.leadId);
+                          setReviewEdit("");
+                        }}
+                        className={`min-w-[200px] max-w-[260px] shrink-0 rounded-lg border p-2.5 text-left transition ${
+                          active ? "border-brand bg-brand/5 ring-2 ring-brand/30" : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-xs font-semibold leading-tight text-slate-900">{t.fullName}</p>
+                          {t.needsReview ? <span className="shrink-0 rounded bg-orange-100 px-1 py-0 text-[9px] font-semibold text-orange-900">Review</span> : null}
+                        </div>
+                        <p className="mt-0.5 truncate text-[10px] text-slate-500">{t.email}</p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          <SourceBadge source={t.source as Lead["source"]} />
+                          <StatusBadge status={t.status as Lead["status"]} />
+                        </div>
+                        <p className="mt-1.5 line-clamp-2 text-[10px] text-slate-600">{clip(t.inboundSnippet, 120)}</p>
+                      </button>
+                    );
+                  })}
+                  {!inboxByTab[inboxTab].length ? (
+                    <div className="flex min-h-[100px] w-full items-center justify-center rounded border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500">
+                      No threads in this tab.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="min-h-[min(70vh,720px)] flex-1">
+                <InboxChatColumn
+                  vm={vm}
+                  inboxLead={inboxLead}
+                  inboxLeadId={inboxLeadId}
+                  latestBookingRecordFn={latestBookingRecord}
+                  clip={clip}
+                  reviewEdit={reviewEdit}
+                  setReviewEdit={setReviewEdit}
+                  className="flex h-full min-h-[480px] flex-col gap-3"
+                />
+              </div>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="mb-2 text-sm font-semibold text-slate-800">Phase 3 · Reply &amp; booking intelligence</p>
+                <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
+                  {[
+                    ["Inbound replies", vm.phase3Metrics.repliesReceived],
+                    ["Positive / link asks", vm.phase3Metrics.positiveReplies],
+                    ["Booking invites sent", vm.phase3Metrics.bookingInvitesSent],
+                    ["Booked meetings", vm.phase3Metrics.bookedMeetings],
+                    ["Not interested", vm.phase3Metrics.notInterested],
+                    ["Suppressed", vm.phase3Metrics.unsubscribes]
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                      <p className="text-[11px] text-slate-500">{label}</p>
+                      <p className="text-sm font-semibold">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </section>
+          )}
+          {activeView === "bookings" && (
+            <section className="space-y-4">
+              <div className="card flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Bookings</h2>
+                  <p className="text-xs text-slate-600">Pipeline state and calendar confirmations. Lead source stays visible for attribution.</p>
+                </div>
+                <p className="text-sm text-slate-700">
+                  Cal link:{" "}
+                  <span className="font-mono text-xs text-brand">{vm.bookingLinkDisplay || appConfig.bookingLink}</span>
+                </p>
+              </div>
+              <div className="space-y-4">
+                <section className="card">
+                  <h3 className="text-base font-semibold text-slate-900">Invites · waiting for response</h3>
+                  <ul className="mt-3 divide-y divide-slate-100">
+                    {bookingInviteList
+                      .filter((r) => r.bucket === "waiting")
+                      .map(({ lead, b }, i) => (
+                        <li key={`w-${lead.id}-${i}`} className="flex flex-wrap items-start justify-between gap-2 py-3 text-sm">
+                          <div>
+                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="text-xs text-slate-500">{lead.email}</p>
+                            <p className="mt-1 text-[11px] text-slate-600">{new Date(b.at).toLocaleString()}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">Waiting</span>
+                            <BookingStatusBadge status={b.status} />
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                  {!bookingInviteList.some((r) => r.bucket === "waiting") ? (
+                    <p className="mt-2 text-sm text-slate-500">No pending invites.</p>
+                  ) : null}
+                </section>
+                <section className="card">
+                  <h3 className="text-base font-semibold text-slate-900">Accepted / confirmed</h3>
+                  <ul className="mt-3 divide-y divide-slate-100">
+                    {bookingInviteList
+                      .filter((r) => r.bucket === "accepted")
+                      .map(({ lead, b }, i) => (
+                        <li key={`a-${lead.id}-${i}`} className="flex flex-wrap items-start justify-between gap-2 py-3 text-sm">
+                          <div>
+                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="text-xs text-slate-500">{lead.email}</p>
+                            {b.meetingStart ? (
+                              <p className="mt-1 text-xs text-slate-700">{new Date(b.meetingStart).toLocaleString()}</p>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-900">Accepted</span>
+                            <BookingStatusBadge status={b.status} />
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                  {!bookingInviteList.some((r) => r.bucket === "accepted") ? (
+                    <p className="mt-2 text-sm text-slate-500">No confirmed bookings yet.</p>
+                  ) : null}
+                </section>
+                <details className="card">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-800">Declined / cancelled ({bookingInviteList.filter((r) => r.bucket === "closed").length})</summary>
+                  <ul className="mt-3 divide-y divide-slate-100">
+                    {bookingInviteList
+                      .filter((r) => r.bucket === "closed")
+                      .map(({ lead, b }, i) => (
+                        <li key={`c-${lead.id}-${i}`} className="py-3 text-sm">
+                          <p className="font-medium text-slate-900">{lead.fullName}</p>
+                          <p className="text-xs text-slate-500">{b.note || b.status}</p>
+                          <p className="text-[11px] text-slate-500">{new Date(b.at).toLocaleString()}</p>
+                        </li>
+                      ))}
+                  </ul>
+                  {!bookingInviteList.some((r) => r.bucket === "closed") ? (
+                    <p className="mt-2 text-sm text-slate-500">No closed invites.</p>
+                  ) : null}
+                </details>
+                {!bookingInviteList.length ? (
+                  <p className="card text-sm text-slate-500">No booking records yet. Send a booking invite or simulate confirmation from the Simulation tab.</p>
+                ) : null}
+              </div>
+            </section>
+          )}
+          {activeView === "verify" && <VerifyWorkbench onRefresh={() => void vm.refresh()} />}
+          {activeView === "simulation" && (
+            <section className="space-y-4">
+              <div className="card">
+                <h2 className="text-lg font-semibold text-slate-900">Simulation</h2>
+                <p className="mt-1 text-xs text-slate-600">
+                  Dev-only workflows: synthetic inbound messages, Cal booking confirmations, inbox seeding, mock classifier, and webhook checks. Use a sandbox lead when possible.
+                </p>
+                <label className="mt-4 block max-w-lg">
+                  <span className="text-xs font-semibold text-slate-700">Target lead</span>
+                  <select
+                    className="mt-1 w-full rounded border border-slate-200 p-2 text-sm"
+                    value={simulationLeadId ?? ""}
+                    onChange={(e) => setSimulationLeadId(e.target.value || null)}
+                  >
+                    {[...vm.leads].sort((a, b) => b.score - a.score).map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.fullName} · score {l.score} · {l.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {!vm.leads.length ? <p className="mt-2 text-sm text-slate-500">No leads loaded — import or seed data first.</p> : null}
+              </div>
+
+              <SimulationPanel
+                leadId={simulationLeadId}
+                onSimulateInbound={(sc) => simulationLeadId && void vm.simulateInbound(simulationLeadId, sc)}
+                onSimulateBooking={() => simulationLeadId && void vm.simulateCalBookingConfirmation(simulationLeadId)}
+              />
+
+              <div className="card space-y-3">
+                <p className="text-sm font-semibold text-slate-900">Bulk &amp; fixtures</p>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                  onClick={() =>
+                    void vm.seedInboxSamples().then((r) => {
+                      if (r?.ok === false && r.error) window.alert(r.error);
+                    })
+                  }
+                >
+                  Seed inbox samples
+                </button>
+                <p className="text-xs text-slate-600">Runs POST /api/dev/seed-inbox-samples — one simulated inbound per scenario on top-scored leads.</p>
+              </div>
+
+              <div className="card space-y-4">
+                <p className="text-sm font-semibold text-slate-900">Cal webhook &amp; mock tools</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isCalWebhookTesting || !simulationLeadId}
+                    onClick={async () => {
+                      const leadId = simulationLeadId;
+                      if (!leadId) {
+                        setCalWebhookTest("Pick a target lead first.");
+                        return;
+                      }
+                      setIsCalWebhookTesting(true);
+                      setCalWebhookTest("Testing Cal webhook...");
+                      try {
+                        const res = await vm.testCalWebhook(leadId);
+                        if (!res.ok) {
+                          setCalWebhookTest(`Webhook failed: ${(res.data as { error?: string })?.error ?? "unknown error"}`);
+                          return;
+                        }
+                        const duplicate = Boolean((res.data as { duplicate?: boolean })?.duplicate);
+                        setCalWebhookTest(duplicate ? "Webhook ok (lead already booked/confirmed)" : "Webhook ok (booking confirmed)");
+                      } catch (e) {
+                        setCalWebhookTest(`Webhook test error: ${String(e)}`);
+                      } finally {
+                        setIsCalWebhookTesting(false);
+                      }
+                    }}
+                    className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {isCalWebhookTesting ? "Testing..." : "Cal webhook health"}
+                  </button>
+                  {calWebhookTest ? <span className="text-xs text-slate-600">{calWebhookTest}</span> : null}
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    disabled={!simulationLeadId}
+                    className="rounded border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                    onClick={() => simulationLeadId && void vm.enrichLead(simulationLeadId)}
+                  >
+                    Mock enrich (selected lead)
+                  </button>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-semibold text-slate-800">Mock reply classifier</p>
+                  <textarea
+                    className="w-full max-w-2xl rounded border border-slate-200 p-2 text-sm"
+                    rows={4}
+                    value={simReplyDraft}
+                    onChange={(e) => setSimReplyDraft(e.target.value)}
+                    placeholder="Paste sample reply text to classify and apply to the selected lead"
+                  />
+                  <button
+                    type="button"
+                    className="mt-2 rounded bg-slate-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                    disabled={!simulationLeadId}
+                    onClick={() => simulationLeadId && void vm.applyMockReply(simulationLeadId, simReplyDraft)}
+                  >
+                    Classify &amp; apply
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                Production paths: inbound email <code className="rounded bg-slate-100 px-1">POST /api/webhooks/inbound-email</code> · Cal{" "}
+                <code className="rounded bg-slate-100 px-1">POST /api/webhooks/cal-booking</code>
+              </p>
+            </section>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}

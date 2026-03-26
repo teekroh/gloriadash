@@ -1,0 +1,39 @@
+{
+  "name": "gloria-dashboard-v2",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "prisma generate",
+    "dev": "next dev --hostname 127.0.0.1 --port 3001",
+    "dev:3000": "next dev --hostname 127.0.0.1 --port 3000",
+    "dev:lan": "next dev --hostname 0.0.0.0 --port 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "prisma db push",
+    "db:recalc-scores": "npx --yes tsx ./scripts/recalc-scores.ts",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.10.1",
+    "chrono-node": "^2.9.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "googleapis": "^171.4.0",
+    "next": "^16.2.1",
+    "prisma": "^6.10.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "resend": "^6.9.4",
+    "zipcodes": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.11",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.5.3",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.8.2"
+  }
+}

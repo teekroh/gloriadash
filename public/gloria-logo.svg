@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1469 1053" width="1469" height="1053">
+  <rect width="100%" height="100%" fill="#dddddd"/>
+  <circle cx="734.5" cy="529" r="319" fill="#000"/>
+  <!-- flag pole -->
+  <path d="M466 419
+           C469 436, 470 459, 471 489
+           C472 540, 473 592, 475 642
+           C476 665, 478 680, 481 692"
+        fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M460 420
+           C465 455, 467 505, 469 560
+           C471 610, 474 656, 479 690"
+        fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="466" cy="420" r="9" fill="none" stroke="#fff" stroke-width="6"/>
+  <!-- flag outline -->
+  <path d="M469 433
+           C515 435, 563 431, 612 428
+           C650 426, 670 432, 688 444
+           C707 457, 726 454, 752 449
+           C787 442, 815 446, 840 455
+           C867 465, 884 485, 904 497
+           C932 513, 964 512, 990 518"
+        fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M467 649
+           C513 636, 558 618, 610 607
+           C648 599, 671 602, 692 610
+           C713 618, 733 615, 756 609
+           C790 600, 823 591, 848 580
+           C876 567, 903 563, 930 557
+           C953 551, 975 544, 994 537"
+        fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- tip -->
+  <path d="M990 518
+           C978 517, 973 518, 968 519
+           C982 520, 1000 521, 1040 524
+           C993 542, 960 556, 930 572
+           C953 565, 975 553, 994 537"
+        fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- little distress marks -->
+  <path d="M936 511 l7 3 M857 564 l-4 8 M910 514 l6 7" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <!-- text -->
+  <text x="548" y="545"
+        fill="#fff"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="102"
+        font-weight="700"
+        letter-spacing="0">gloria.</text>
+</svg>

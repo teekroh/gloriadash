@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Lead {
+  id                   String    @id
+  firstName            String
+  lastName             String
+  fullName             String
+  company              String
+  email                String
+  phone                String
+  city                 String
+  state                String
+  zip                  String
+  leadType             String
+  source               String
+  sourceDetail         String
+  enrichmentStatus     String
+  /** When set: "high" | "low" — trusted CRM / manual override for using city in copy. */
+  locationConfidence   String?
+  /** CSV / confidence pass: 0–100 address quality for outreach and copy (see addressConfidencePolicy). */
+  addressConfidence    Int?
+  /** Short explanation from confidence pass. */
+  confidenceNotes      String    @default("")
+  importedFromCsv      Boolean   @default(false)
+  amountSpent          Float     @default(0)
+  notes                String
+  distanceMinutes      Int       @default(0)
+  score                Int       @default(0)
+  conversionScore      Int       @default(0)
+  projectFitScore      Int       @default(0)
+  estimatedProjectTier String
+  priorityTier         String
+  status               String
+  doNotContact         Boolean   @default(false)
+  /** null = needs review (if score high); "approved" | "rejected" after Verify tab. */
+  deployVerifyVerdict String?
+  scoreBreakdownJson   String
+  lastContactedAt      DateTime?
+  nextFollowUpAt       DateTime?
+  createdAt            DateTime
+  updatedAt            DateTime
+  campaignLinks        CampaignLead[]
+  messages             Message[]
+  followUps            FollowUp[]
+  bookings             Booking[]
+  inboundReplies       InboundReply[]
+}
+
+model Campaign {
+  id         String         @id
+  name       String
+  launchedAt DateTime
+  sentCount  Int
+  createdAt  DateTime       @default(now())
+  leads      CampaignLead[]
+  messages   Message[]
+  inboundReplies InboundReply[]
+}
+
+model CampaignLead {
+  id         String   @id
+  campaignId String
+  leadId     String
+  assignedAt DateTime
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, leadId])
+}
+
+model Message {
+  id         String    @id
+  leadId     String
+  campaignId String?
+  direction  String
+  kind       String
+  body       String
+  sentAt     DateTime
+  status     String
+  lead       Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+}
+
+model FollowUp {
+  id           String    @id
+  leadId       String
+  campaignId   String
+  sequence     Int
+  scheduledFor DateTime
+  status       String
+  sentAt       DateTime?
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
+
+model InboundReply {
+  id                       String   @id
+  leadId                   String
+  campaignId               String?
+  messageId                String?
+  providerMessageId        String?
+  fromEmail                String
+  toEmail                  String
+  subject                  String
+  bodyText                 String
+  bodyHtml                 String
+  receivedAt               DateTime
+  classification           String
+  classificationConfidence Float
+  classificationReason     String
+  suggestedAction          String
+  suggestedReplyDraft      String?
+  autoActionTaken          String?
+  needsReview              Boolean
+  mixedIntent              Boolean   @default(false)
+  automationAllowed        Boolean   @default(false)
+  automationBlockedReason  String?
+  classifierExplanation    String    @default("")
+  processedAt              DateTime @default(now())
+  lead                     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign                 Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+}
+
+model Booking {
+  id                String    @id
+  leadId            String
+  campaignId        String?
+  status            String
+  note              String
+  bookingLink       String?
+  externalBookingId String?
+  bookedAt          DateTime?
+  meetingStart      DateTime?
+  meetingEnd        DateTime?
+  meetingStatus     String?
+  createdAt         DateTime
+  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+}
