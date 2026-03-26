@@ -2,6 +2,10 @@ import { DashboardApp } from "@/components/dashboard/DashboardApp";
 import { importCsvLeads } from "@/data/importLeads";
 import { getDashboardData } from "@/services/persistenceService";
 
+// Vercel build was failing during "Collecting page data" because this page is runtime-data dependent.
+// Force this route to be rendered dynamically at request time (no static pre-render at build).
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const data = await getDashboardData();
   const importSummary = importCsvLeads().summary;
