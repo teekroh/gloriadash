@@ -64,6 +64,7 @@ export const useDashboard = (
   initialBookingReplyPreview = "",
   initialOutreachDryRun = true
 ) => {
+  const adminApiKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY ?? "";
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [inboxThreads, setInboxThreads] = useState<InboxThread[]>(initialInboxThreads);
   const [phase3Metrics, setPhase3Metrics] = useState<Phase3Metrics>(initialPhase3Metrics);
@@ -198,7 +199,10 @@ export const useDashboard = (
   const launchCampaign = async (name: string, options?: LaunchCampaignOptions) => {
     const response = await fetch("/api/campaigns/launch", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+      },
       body: JSON.stringify({
         name,
         leadIds: selectedIds,
@@ -309,14 +313,22 @@ export const useDashboard = (
   const simulateInbound = async (leadId: string, scenario: SimulatedScenario) => {
     await fetch("/api/dev/simulate-inbound", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+      },
       body: JSON.stringify({ leadId, scenario })
     });
     await refresh();
   };
 
   const seedInboxSamples = async () => {
-    const res = await fetch("/api/dev/seed-inbox-samples", { method: "POST" });
+    const res = await fetch("/api/dev/seed-inbox-samples", {
+      method: "POST",
+      headers: {
+        ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+      }
+    });
     const data = await res.json().catch(() => ({}));
     await refresh();
     return data as { ok?: boolean; error?: string; results?: unknown[] };

@@ -146,7 +146,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
   return (
     <section className="space-y-4">
       <header className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="text-lg font-semibold text-slate-900">Pre-deploy verify</h2>
+        <h2 className="text-lg font-semibold text-brand-ink">Pre-deploy verify</h2>
         <p className="mt-1 text-sm text-slate-600">
           Score <strong>≥ {stats?.minScore ?? DEPLOY_VERIFY_MIN_SCORE}</strong> leads must be approved here before they can be included in a campaign send
           (unless you check the launch override on the Leads tab). Use the search panel to sanity-check the person and location, then thumbs up or down.
@@ -177,11 +177,11 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
 
       {!current ? (
         <div className="card p-10 text-center">
-          <p className="text-lg font-medium text-slate-800">Queue empty</p>
+          <p className="text-lg font-medium text-brand-ink/90">Queue empty</p>
           <p className="mt-2 text-sm text-slate-600">All high-score leads are approved or rejected. New imports start unreviewed again.</p>
           <button
             type="button"
-            className="mt-4 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            className="mt-4 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-brand-ink/90 hover:bg-slate-50"
             onClick={() => void loadQueue()}
           >
             Refresh queue
@@ -196,12 +196,12 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
           >
             <article className="rounded-xl border-2 border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lead profile</p>
-              <h3 className="mt-2 text-xl font-bold text-slate-900">{current.fullName}</h3>
+              <h3 className="mt-2 text-xl font-bold text-brand-ink">{current.fullName}</h3>
               <p className="text-sm text-slate-600">{current.company}</p>
               <div className="mt-4 space-y-2 text-sm">
                 <p>
                   <span className="text-slate-500">Email</span>{" "}
-                  <a className="font-medium text-slate-900 underline" href={`mailto:${current.email}`}>
+                  <a className="font-medium text-brand-ink underline" href={`mailto:${current.email}`}>
                     {current.email}
                   </a>
                 </p>
@@ -223,7 +223,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
                 </p>
                 <p>
                   <span className="text-slate-500">Score (rank)</span>{" "}
-                  <span className="text-lg font-bold text-slate-900">{current.score}</span>{" "}
+                  <span className="text-lg font-bold text-brand-ink">{current.score}</span>{" "}
                   <span className="text-slate-500">· {current.priorityTier}</span>
                 </p>
                 <p className="text-xs text-amber-900">
@@ -236,7 +236,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
                   <AddressConfidenceBadge score={current.addressConfidence} />
                 </p>
                 {current.confidenceNotes?.trim() ? (
-                  <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-800">
+                  <p className="rounded-lg bg-slate-50 p-2 text-xs text-brand-ink/90">
                     <span className="font-semibold">Confidence notes:</span> {current.confidenceNotes}
                   </p>
                 ) : null}
@@ -250,19 +250,19 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
             </article>
 
             <article className="flex flex-col rounded-xl border-2 border-stone-200 bg-stone-50/60 p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-900/80">Web search</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-ink/80">Web search</p>
               <p className="mt-1 text-xs text-slate-600">
                 Inline results use Google <strong>Custom Search</strong> (set <code className="rounded bg-white/80 px-1">GOOGLE_CSE_API_KEY</code> +{" "}
                 <code className="rounded bg-white/80 px-1">GOOGLE_CSE_CX</code>). Otherwise open Google in a new tab.
               </p>
-              <p className="mt-3 break-words rounded border border-stone-200 bg-white px-3 py-2 font-mono text-[11px] text-slate-800">
+              <p className="mt-3 break-words rounded border border-stone-200 bg-white px-3 py-2 font-mono text-[11px] text-brand-ink/90">
                 {buildReviewQuery(current)}
               </p>
               <a
                 href={openGoogle}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-3 inline-flex w-fit items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="mt-3 inline-flex w-fit items-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-dark"
               >
                 Open in Google →
               </a>
@@ -282,7 +282,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
                     ) : (
                       searchPayload.items.map((it, i) => (
                         <li key={`${it.link}-${i}`} className="border-b border-slate-100 pb-3 last:border-0">
-                          <a href={it.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-900 hover:underline">
+                          <a href={it.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-ink hover:underline">
                             {it.title || it.link}
                           </a>
                           <p className="mt-1 text-[11px] leading-snug text-slate-600">{it.snippet}</p>
@@ -313,7 +313,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
               type="button"
               disabled={busy || queue.length <= 1}
               onClick={() => void skipUnknown()}
-              className="flex min-w-[200px] items-center justify-center gap-2 rounded-xl border-2 border-slate-400 bg-slate-50 px-8 py-4 text-base font-semibold text-slate-900 hover:bg-slate-100 disabled:opacity-50"
+              className="flex min-w-[200px] items-center justify-center gap-2 rounded-xl border-2 border-brand/40 bg-brand/5 px-8 py-4 text-base font-semibold text-brand-ink hover:bg-brand/12 disabled:opacity-50"
               title={queue.length <= 1 ? "Nothing to skip to." : "Move this lead to the back of the carousel without saving a verdict."}
             >
               <span className="text-2xl" aria-hidden>

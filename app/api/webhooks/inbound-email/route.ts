@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { processInboundEmail } from "@/services/inboundProcessingService";
+import { requireWebhookSecret } from "@/lib/apiRouteSecurity";
 
 /** Resend-style or generic inbound webhook — mockable shape. */
 export async function POST(request: Request) {
@@ -14,6 +15,18 @@ export async function POST(request: Request) {
   if (!fromEmail || !bodyText) {
     return NextResponse.json({ ok: false, error: "Missing from or body." }, { status: 400 });
   }
+
+  const bodySecret =
+    typeof payload.webhookSecret === "string"
+      ? payload.webhookSecret
+      : typeof payload.secret === "string"
+        ? payload.secret
+        : "";
+  const secretErr = requireWebhookSecret(request, "INBOUND_WEBHOOK_SECRET", {
+    headerNames: ["x-inbound-webhook-secret", "x-webhook-secret", "webhook-secret"],
+    bodyValues: [bodySecret]
+  });
+  if (secretErr) return secretErr;
 
   const result = await processInboundEmail({
     fromEmail,

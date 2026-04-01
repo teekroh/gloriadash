@@ -3,13 +3,13 @@ import { CALCOM_BOOKING_LINK_EXAMPLE, CALCOM_EVENT_DURATION_MIN, CALCOM_EVENT_NA
 
 export default function CalSetupPage() {
   return (
-    <main className="mx-auto max-w-2xl p-8 text-slate-800">
+    <main className="mx-auto max-w-2xl p-8 text-brand-ink/90">
       <p className="mb-2 text-sm text-slate-500">
         <Link href="/dashboard" className="text-brand underline">
           ← Dashboard
         </Link>
       </p>
-      <h1 className="text-2xl font-semibold text-slate-900">Cal.com: Cabinet intro event</h1>
+      <h1 className="text-2xl font-semibold text-brand-ink">Cal.com: Cabinet intro event</h1>
       <p className="mt-2 text-sm text-slate-600">
         Configure one event type for Gloria’s outbound + inbound booking funnel, then set <code className="rounded bg-slate-100 px-1">BOOKING_LINK</code> in{" "}
         <code className="rounded bg-slate-100 px-1">.env.local</code>.

@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { launchCampaign } from "@/services/persistenceService";
 import type { LaunchCampaignOptions } from "@/services/addressConfidencePolicy";
+import { requireAdminApiKey } from "@/lib/apiRouteSecurity";
 
 export async function POST(request: Request) {
+  const authErr = requireAdminApiKey(request);
+  if (authErr) return authErr;
   const payload = await request.json();
   const name = String(payload.name || "Campaign");
   const leadIds = Array.isArray(payload.leadIds) ? payload.leadIds : [];

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { detectCalBookingEventType, processCalBookingPayload } from "@/services/calBookingService";
+import { requireAdminApiKey, requireWebhookSecret } from "@/lib/apiRouteSecurity";
 
 function getHeader(request: Request, name: string): string | undefined {
   const v = request.headers.get(name);
@@ -51,7 +52,6 @@ export async function POST(request: Request) {
 
   const eventType = detectCalBookingEventType(body);
 
-  const calSecret = process.env.CAL_WEBHOOK_SECRET?.trim() ?? "";
   const secretFromHeader =
     getHeader(request, "x-cal-webhook-secret") ||
     getHeader(request, "x-webhook-secret") ||
@@ -60,10 +60,14 @@ export async function POST(request: Request) {
     getHeader(request, "webhook-signature");
 
   const secretFromPayload = extractSecretCandidate(body);
-
-  const secretOk = !calSecret
-    ? true
-    : Boolean(secretFromHeader && secretFromHeader === calSecret) || Boolean(secretFromPayload && secretFromPayload === calSecret);
+  const secretErr = requireWebhookSecret(request, "CAL_WEBHOOK_SECRET", {
+    headerNames: ["x-cal-webhook-secret", "x-webhook-secret", "x-cal-secret", "webhook-secret", "webhook-signature"],
+    bodyValues: [secretFromPayload ?? "", secretFromHeader ?? ""]
+  });
+  if (secretErr) {
+    const adminErr = requireAdminApiKey(request);
+    if (adminErr) return secretErr;
+  }
 
   // Clear logs for receipt + validation + event type.
   console.log(`[Cal Webhook] received`, {
@@ -71,17 +75,11 @@ export async function POST(request: Request) {
     receivedAt,
     eventType,
     hasBody: Boolean(body),
-    secretConfigured: Boolean(calSecret),
+    secretConfigured: Boolean(process.env.CAL_WEBHOOK_SECRET?.trim()),
     secretHeaderPresent: Boolean(secretFromHeader),
     secretPayloadPresent: Boolean(secretFromPayload),
-    secretValidated: secretOk || !calSecret
+    secretValidated: true
   });
-  console.log(`[Cal Webhook] payload`, body);
-
-  if (calSecret && !secretOk) {
-    console.warn(`[Cal Webhook] secret validation failed`, { requestId });
-    return NextResponse.json({ ok: false, error: "Invalid CAL_WEBHOOK_SECRET" }, { status: 401 });
-  }
 
   // Process booking.created/rescheduled/cancelled if we can match to a lead/campaign.
   try {

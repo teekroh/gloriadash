@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { withOutreachSignature } from "@/services/outreachSendService";
+import { blockInProductionUnlessEnabled, requireAdminApiKey } from "@/lib/apiRouteSecurity";
 
 const TEST_TO = "timothyjkroh@gmail.com";
 const SUBJECT = "Gloria test email";
 const BODY = "This is a direct Resend integration test.";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const blocked = blockInProductionUnlessEnabled("ALLOW_TEST_EMAIL_ROUTE");
+  if (blocked) return blocked;
+  const authErr = requireAdminApiKey(request);
+  if (authErr) return authErr;
   const resendApiKey = process.env.RESEND_API_KEY ?? "";
   const fromEmail = process.env.OUTREACH_FROM_EMAIL ?? "";
   const replyToEmail = process.env.OUTREACH_REPLY_TO_EMAIL ?? "";

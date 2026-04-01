@@ -124,7 +124,7 @@ function DashboardBookingsCalendar({ leads }: { leads: Lead[] }) {
 
   return (
     <section className="card mt-4">
-      <h3 className="text-base font-semibold text-slate-900">Bookings calendar · {monthLabel}</h3>
+      <h3 className="text-base font-semibold text-brand-ink">Bookings calendar · {monthLabel}</h3>
       <p className="mt-1 text-xs text-slate-600">Meetings with a scheduled start time from booking records.</p>
       <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase text-slate-500">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -138,9 +138,9 @@ function DashboardBookingsCalendar({ leads }: { leads: Lead[] }) {
           ) : (
             <div
               key={cell.day}
-              className={`min-h-[72px] rounded border p-1 text-left text-xs ${cell.items.length ? "border-slate-300 bg-stone-100" : "border-slate-100 bg-white"}`}
+              className={`min-h-[72px] rounded border p-1 text-left text-xs ${cell.items.length ? "border-brand/40 bg-brand/10" : "border-stone-100 bg-white"}`}
             >
-              <span className="font-semibold text-slate-800">{cell.day}</span>
+              <span className="font-semibold text-brand-ink/90">{cell.day}</span>
               {cell.items.slice(0, 2).map((e, j) => (
                 <p key={j} className="mt-1 truncate text-[10px] text-slate-700" title={`${e.leadName} · ${e.status}`}>
                   {e.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} {e.leadName.split(" ")[0]}
@@ -201,12 +201,12 @@ function InboxChatColumn({
   return (
     <div className={className ?? "flex min-h-0 flex-1 flex-col gap-3 space-y-0"}>
       <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-        <h3 className="mb-1 shrink-0 font-semibold text-slate-900">Chat history</h3>
+        <h3 className="mb-1 shrink-0 font-semibold text-brand-ink">Chat history</h3>
         {!inboxLead || !selectedThread ? (
           <p className="text-sm text-slate-500">Select a thread above to review, approve, and send.</p>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <p className="text-sm font-medium text-slate-900">{inboxLead.fullName}</p>
+            <p className="text-sm font-medium text-brand-ink">{inboxLead.fullName}</p>
             <p className="text-xs text-slate-500">{inboxLead.email}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <SourceBadge source={inboxLead.source} />
@@ -230,7 +230,7 @@ function InboxChatColumn({
                 <p className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{selectedThread.inboundSnippet}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-900">
+                <span className="rounded-md bg-stone-100 px-2 py-0.5 text-[11px] font-medium capitalize text-brand-ink">
                   {selectedThread.classification.replace(/_/g, " ")}
                 </span>
                 <span className="text-[11px] text-slate-600">{(selectedThread.confidence * 100).toFixed(0)}% model confidence</span>
@@ -249,7 +249,7 @@ function InboxChatColumn({
                 />
                 <p className="text-[11px] text-slate-700">{inboxLead.latestInbound.classificationReason}</p>
                 {inboxLead.latestInbound.suggestedReplyDraft && (
-                  <div className="max-h-36 overflow-y-auto rounded border border-orange-100 bg-white p-2 text-xs whitespace-pre-wrap text-slate-800">
+                  <div className="max-h-36 overflow-y-auto rounded border border-orange-100 bg-white p-2 text-xs whitespace-pre-wrap text-brand-ink/90">
                     {inboxLead.latestInbound.suggestedReplyDraft}
                   </div>
                 )}
@@ -262,7 +262,7 @@ function InboxChatColumn({
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                    className="rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-dark"
                     onClick={() => {
                       const d = inboxLead.latestInbound?.suggestedReplyDraft || "";
                       void vm.sendReviewReply(inboxLead.id, d, inboxLead.latestInbound?.id);
@@ -404,9 +404,7 @@ export function DashboardApp({
   const [campaignOverrideVerify, setCampaignOverrideVerify] = useState(false);
   const [activeView, setActiveView] = useState<(typeof SIDEBAR_VIEWS)[number]>("dashboard");
   const [liteMode, setLiteMode] = useState(false);
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [demoStatus, setDemoStatus] = useState<string | null>(null);
-  const [dashboardTab, setDashboardTab] = useState<"active" | "pool" | "lost">("active");
+  const [dashboardTab, setDashboardTab] = useState<"active" | "lost">("active");
   const [inboxLeadId, setInboxLeadId] = useState<string | null>(null);
   const [inboxTab, setInboxTab] = useState<(typeof INBOX_TABS)[number]>("Needs Review");
   const [reviewEdit, setReviewEdit] = useState("");
@@ -448,7 +446,7 @@ export function DashboardApp({
       sourceDetail: ""
     });
   const inboxLead = vm.leads.find((l) => l.id === inboxLeadId) ?? null;
-  const demoLeadId = simulationLeadId ?? vm.leads[0]?.id ?? null;
+
   const visibleViews = liteMode ? LITE_SIDEBAR_VIEWS : SIDEBAR_VIEWS;
 
   useEffect(() => {
@@ -605,12 +603,7 @@ export function DashboardApp({
     () => vm.leads.filter((l) => (l.replyHistory?.length ?? 0) > 0 && isLostLead(l)),
     [vm.leads]
   );
-  const dashboardLeadPool = useMemo(
-    () => vm.leads.filter((l) => (l.replyHistory?.length ?? 0) === 0),
-    [vm.leads]
-  );
-  const dashboardRows =
-    dashboardTab === "active" ? dashboardActiveLeads : dashboardTab === "pool" ? dashboardLeadPool : dashboardLostLeads;
+  const dashboardRows = dashboardTab === "active" ? dashboardActiveLeads : dashboardLostLeads;
   const sortedDashboardRows = useMemo(() => {
     const rows = [...dashboardRows];
     const byLastReplyDesc = (a: Lead, b: Lead) => {
@@ -623,13 +616,7 @@ export function DashboardApp({
       const bi = b.status === "Not Interested" ? 1 : 0;
       return ai - bi;
     };
-    if (dashboardTab === "pool") {
-      rows.sort((a, b) => {
-        const ni = notInterestedLast(a, b);
-        if (ni !== 0) return ni;
-        return b.score - a.score;
-      });
-    } else if (dashboardTab === "lost") {
+    if (dashboardTab === "lost") {
       rows.sort(byLastReplyDesc);
     } else {
       rows.sort((a, b) => {
@@ -654,7 +641,7 @@ export function DashboardApp({
   return (
     <div className="min-h-screen">
       <div className="grid min-h-screen grid-cols-[250px_1fr]">
-        <aside className="border-r border-slate-200 bg-slate-900 p-4 text-slate-100">
+        <aside className="border-r border-white/10 bg-brand-ink p-4 text-stone-100">
           <div className="mb-6 flex items-center gap-3">
             <img src="/gloria-logo.svg" alt="Gloria logo" className="h-10 w-10 rounded bg-white p-1" />
             <div>
@@ -668,12 +655,12 @@ export function DashboardApp({
                 key={v}
                 type="button"
                 onClick={() => setActiveView(v)}
-                className={`block w-full rounded px-3 py-2 text-left capitalize ${activeView === v ? "bg-slate-700" : "hover:bg-slate-800"}`}
+                className={`block w-full rounded px-3 py-2 text-left capitalize ${activeView === v ? "bg-brand font-medium text-brand-ink shadow-sm" : "text-stone-100 hover:bg-brand-inkLight"}`}
               >
                 {v}
               </button>
             ))}
-            <Link href="/setup/cal" className="block rounded px-3 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white">
+            <Link href="/setup/cal" className="block rounded px-3 py-2 text-left text-stone-300 hover:bg-brand-inkLight hover:text-white">
               Cal.com setup
             </Link>
             <button
@@ -681,8 +668,8 @@ export function DashboardApp({
               onClick={() => setLiteMode((v) => !v)}
               className={`mt-2 block w-full rounded border px-3 py-2 text-left text-xs font-medium ${
                 liteMode
-                  ? "border-stone-300 bg-stone-100 text-slate-900"
-                  : "border-slate-700 text-slate-200 hover:bg-slate-800"
+                  ? "border-stone-300 bg-stone-100 text-brand-ink"
+                  : "border-white/20 text-stone-200 hover:bg-brand-inkLight"
               }`}
             >
               {liteMode ? "Lite mode: Inbox + Bookings" : "Switch to Lite mode"}
@@ -691,12 +678,12 @@ export function DashboardApp({
         </aside>
 
         <main className="p-4">
-          <header className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+          <header className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white p-4">
             <div>
-              <h1 className="text-xl font-semibold">Lead Ops Command Center</h1>
-              <p className="text-sm text-slate-600">Qualified lead launcher, reply triage, and remote intro booking flow.</p>
+              <h1 className="text-xl font-semibold text-brand-ink">Lead Ops Command Center</h1>
+              <p className="text-sm text-brand-ink/65">Qualified lead launcher, reply triage, and remote intro booking flow.</p>
             </div>
-            <button onClick={exportData} className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">Export (Includes Source)</button>
+            <button onClick={exportData} className="rounded bg-brand-ink px-3 py-2 text-sm font-semibold text-white hover:bg-brand-inkLight">Export (Includes Source)</button>
           </header>
           {!vm.bookingLinkConfigured && (
             <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -734,7 +721,7 @@ export function DashboardApp({
                 const inner = (
                   <>
                     <p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{label}</p>
-                    <p className="text-sm font-bold tabular-nums leading-tight text-slate-900">{value}</p>
+                    <p className="text-sm font-bold tabular-nums leading-tight text-brand-ink">{value}</p>
                   </>
                 );
                 const boxClass =
@@ -763,7 +750,7 @@ export function DashboardApp({
           )}
           {activeView === "leads" && (
             <section className="mb-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
-              <p className="font-semibold text-slate-800">
+              <p className="font-semibold text-brand-ink/90">
                 <span title={ADDRESS_CONFIDENCE_TOOLTIP} className="cursor-help border-b border-dotted border-slate-400">
                   Address confidence bands
                 </span>{" "}
@@ -774,7 +761,7 @@ export function DashboardApp({
                 {vm.addressMetrics.bands.caution} · Weak 31–50: {vm.addressMetrics.bands.weak} · Poor 0–30:{" "}
                 {vm.addressMetrics.bands.poor} · Unknown: {vm.addressMetrics.bands.unknown}
               </p>
-              <p className="mt-1 font-medium text-slate-800">
+              <p className="mt-1 font-medium text-brand-ink/90">
                 Outreach-ready by classification (addr ≥{OUTREACH_ADDRESS_MIN_DEFAULT}, not DNC): designer/architect{" "}
                 {vm.addressMetrics.byClass.designer_architect} · builder/contractor {vm.addressMetrics.byClass.builder_contractor} · cabinet partner{" "}
                 {vm.addressMetrics.byClass.cabinet_shop_partner} · homeowner {vm.addressMetrics.byClass.homeowner}
@@ -783,7 +770,7 @@ export function DashboardApp({
           )}
           {activeView === "leads" && (
           <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-            <p className="mb-2 text-sm font-semibold text-slate-800">
+            <p className="mb-2 text-sm font-semibold text-brand-ink/90">
               Phase 3 · Reply &amp; booking intelligence
             </p>
             <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
@@ -803,7 +790,7 @@ export function DashboardApp({
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div className="text-xs text-slate-600">
-                <p className="font-medium text-slate-800">Reply rate by source</p>
+                <p className="font-medium text-brand-ink/90">Reply rate by source</p>
                 {Object.entries(vm.phase3Metrics.replyRateBySource).map(([k, v]) => (
                   <p key={k}>
                     {k}: {v.replied}/{v.contacted} replied
@@ -811,7 +798,7 @@ export function DashboardApp({
                 ))}
               </div>
               <div className="text-xs text-slate-600">
-                <p className="font-medium text-slate-800">Reply rate by lead type</p>
+                <p className="font-medium text-brand-ink/90">Reply rate by lead type</p>
                 {Object.entries(vm.phase3Metrics.replyRateByLeadType).map(([k, v]) => (
                   <p key={k}>
                     {k}: {v.replied}/{v.contacted}
@@ -819,7 +806,7 @@ export function DashboardApp({
                 ))}
               </div>
               <div className="text-xs text-slate-600">
-                <p className="font-medium text-slate-800">Booking rate by priority tier</p>
+                <p className="font-medium text-brand-ink/90">Booking rate by priority tier</p>
                 {Object.entries(vm.phase3Metrics.bookingRateByTier).map(([k, v]) => (
                   <p key={k}>
                     {k}: {v.booked}/{v.eligible} booked
@@ -856,7 +843,7 @@ export function DashboardApp({
           )}
 
           {activeView === "leads" && (
-            <section className="card overflow-hidden border-t-4 border-slate-800/15 bg-gradient-to-b from-white to-slate-50 shadow-sm">
+            <section className="card overflow-hidden border-t-4 border-brand/35 bg-gradient-to-b from-white to-slate-50 shadow-sm">
                 {addLeadOpen ? (
                   <div
                     className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
@@ -872,7 +859,7 @@ export function DashboardApp({
                       className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <h3 id="add-lead-title" className="text-lg font-semibold text-slate-900">
+                      <h3 id="add-lead-title" className="text-lg font-semibold text-brand-ink">
                         Add lead
                       </h3>
                       <p className="mt-1 text-xs text-slate-600">
@@ -1040,7 +1027,7 @@ export function DashboardApp({
                           <button
                             type="button"
                             disabled={addLeadBusy}
-                            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-brand-ink/90 hover:bg-slate-50 disabled:opacity-50"
                             onClick={() => {
                               if (!addLeadBusy) setAddLeadOpen(false);
                             }}
@@ -1050,7 +1037,7 @@ export function DashboardApp({
                           <button
                             type="submit"
                             disabled={addLeadBusy}
-                            className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                            className="rounded bg-brand px-4 py-2 text-sm font-medium text-brand-ink hover:bg-brand-dark disabled:opacity-50"
                           >
                             {addLeadBusy ? "Saving…" : "Save lead"}
                           </button>
@@ -1062,7 +1049,7 @@ export function DashboardApp({
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-semibold text-slate-900">Lead library</h2>
+                      <h2 className="text-lg font-semibold text-brand-ink">Lead library</h2>
                       <p className="mt-0.5 text-xs text-slate-600">
                         Sorted by <strong>score</strong> (highest first). Filter, multi-select with checkboxes, preview first-touch copy, and launch campaigns to the
                         selected audience.
@@ -1070,7 +1057,7 @@ export function DashboardApp({
                     </div>
                     <button
                       type="button"
-                      className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                      className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-ink hover:bg-brand-dark"
                       onClick={() => {
                         resetAddLeadForm();
                         setAddLeadOpen(true);
@@ -1182,7 +1169,7 @@ export function DashboardApp({
                         <tr key={lead.id} className="border-t hover:bg-slate-50">
                           <td className="p-2"><input type="checkbox" checked={vm.selectedIds.includes(lead.id)} onChange={(e) => vm.setSelectedIds((ids) => e.target.checked ? [...ids, lead.id] : ids.filter((id) => id !== lead.id))} /></td>
                           <td className="p-2">
-                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="font-medium text-brand-ink">{lead.fullName}</p>
                             <p className="text-xs text-slate-500">{lead.company || lead.email}</p>
                           </td>
                           <td className="p-2">
@@ -1220,8 +1207,8 @@ export function DashboardApp({
                 </div>
 
                 {singleSelectedLead ? (
-                  <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-slate-800">
-                    <p className="font-semibold text-slate-900">Lead detail · {singleSelectedLead.fullName}</p>
+                  <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-brand-ink/90">
+                    <p className="font-semibold text-brand-ink">Lead detail · {singleSelectedLead.fullName}</p>
                     <p className="mt-1 text-xs">
                       <strong>Outreach readiness:</strong> {outreachReadiness(singleSelectedLead).label} —{" "}
                       {outreachReadiness(singleSelectedLead).factors.join(" · ")}
@@ -1304,7 +1291,7 @@ export function DashboardApp({
                         window.alert((data as { error?: string }).error ?? "Launch blocked.");
                       }
                     }}
-                    className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                    className="rounded bg-brand px-3 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-dark"
                   >
                     Launch Campaign ({vm.selectedIds.length})
                   </button>
@@ -1312,7 +1299,7 @@ export function DashboardApp({
 
                 {selectedLeads.length > 0 ? (
                   <div className="mt-3 rounded border border-slate-200 bg-white p-3 text-xs text-slate-700">
-                    <p className="font-semibold text-slate-900">Campaign · address selection summary</p>
+                    <p className="font-semibold text-brand-ink">Campaign · address selection summary</p>
                     <p className="mt-1">
                       Bands: strong {campaignAddressPreview.bands.strong} · good {campaignAddressPreview.bands.good} · caution{" "}
                       {campaignAddressPreview.bands.caution} · weak {campaignAddressPreview.bands.weak} · poor {campaignAddressPreview.bands.poor} · unknown{" "}
@@ -1334,7 +1321,7 @@ export function DashboardApp({
                     </p>
                     {campaignAddressPreview.riskyWithNotes.length ? (
                       <div className="mt-2 border-t border-slate-100 pt-2">
-                        <p className="font-medium text-slate-800">Confidence notes (under {OUTREACH_ADDRESS_MIN_DEFAULT} or unknown)</p>
+                        <p className="font-medium text-brand-ink/90">Confidence notes (under {OUTREACH_ADDRESS_MIN_DEFAULT} or unknown)</p>
                         <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto">
                           {campaignAddressPreview.riskyWithNotes.map((x) => (
                             <li key={x.id}>
@@ -1347,7 +1334,7 @@ export function DashboardApp({
                   </div>
                 ) : null}
                 <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <p className="font-semibold text-slate-900">Launch preview — first-touch (up to 5 leads)</p>
+                  <p className="font-semibold text-brand-ink">Launch preview — first-touch (up to 5 leads)</p>
                   <p className="mt-1 text-xs text-slate-600">
                     Copy is generated from <strong>lead type → classification</strong>. City appears only when <strong>address confidence ≥86</strong> or CRM
                     / enrichment location trust is high. Business score does not change wording.
@@ -1359,7 +1346,7 @@ export function DashboardApp({
                     <ul className="mt-3 space-y-3">
                       {firstTouchLaunchSamples.map(({ lead, rendered }) => (
                         <li key={lead.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-                          <p className="font-medium text-slate-900">
+                          <p className="font-medium text-brand-ink">
                             {lead.fullName} · <span className="capitalize text-slate-600">{lead.leadType.replace(/_/g, " ")}</span> ·{" "}
                             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
                               {rendered.classification}
@@ -1371,7 +1358,7 @@ export function DashboardApp({
                             ) : null}{" "}
                             <span className="text-slate-500">{rendered.templateId}</span>
                           </p>
-                          <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-slate-800">
+                          <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-brand-ink/90">
                             {rendered.body}
                           </pre>
                         </li>
@@ -1386,7 +1373,7 @@ export function DashboardApp({
           {activeView === "dashboard" && (
             <section className="card">
               <div className="mb-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                <p className="font-semibold text-slate-800">
+                <p className="font-semibold text-brand-ink/90">
                   Address quality · verified {vm.addressMetrics.verified} · 71+ {vm.addressMetrics.good} · needs review (&lt;71){" "}
                   {vm.addressMetrics.low} · very poor (≤10) {vm.addressMetrics.veryPoor}
                 </p>
@@ -1396,7 +1383,7 @@ export function DashboardApp({
               </div>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Dashboard</h2>
+                  <h2 className="text-lg font-semibold text-brand-ink">Dashboard</h2>
                   <p className="text-xs text-slate-600">
                     <strong>Active leads</strong> replied and are still in play. <strong>Retire to lost</strong> marks them not interested (or DNC) and moves them to{" "}
                     <strong>Lost leads</strong>. <strong>Lead pool</strong> has no reply yet. Open a row to jump to <strong>Leads</strong> with that contact selected for outreach, or to <strong>Inbox</strong> when they need review.
@@ -1405,72 +1392,7 @@ export function DashboardApp({
                 <div className="text-right text-xs text-slate-600">
                   <div>Active: {dashboardActiveLeads.length}</div>
                   <div>Lost: {dashboardLostLeads.length}</div>
-                  <div>Lead pool: {dashboardLeadPool.length}</div>
                 </div>
-              </div>
-
-              <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3">
-                <p className="text-sm font-semibold text-slate-900">Demo actions</p>
-                <p className="mt-1 text-xs text-slate-600">
-                  Quick fake activity for demos: seed inbound replies, simulate a positive reply, or mark a booking confirmed.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={demoBusy}
-                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-50"
-                    onClick={async () => {
-                      setDemoBusy(true);
-                      setDemoStatus("Seeding inbox demo samples...");
-                      try {
-                        const r = await vm.seedInboxSamples();
-                        if (r?.ok === false && r.error) setDemoStatus(`Seed failed: ${r.error}`);
-                        else setDemoStatus("Demo inbox samples seeded.");
-                      } finally {
-                        setDemoBusy(false);
-                      }
-                    }}
-                  >
-                    Seed demo inbox
-                  </button>
-                  <button
-                    type="button"
-                    disabled={demoBusy || !demoLeadId}
-                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-50"
-                    onClick={async () => {
-                      if (!demoLeadId) return;
-                      setDemoBusy(true);
-                      setDemoStatus("Simulating positive reply...");
-                      try {
-                        await vm.simulateInbound(demoLeadId, "positive");
-                        setDemoStatus("Positive reply simulated.");
-                      } finally {
-                        setDemoBusy(false);
-                      }
-                    }}
-                  >
-                    Simulate positive reply
-                  </button>
-                  <button
-                    type="button"
-                    disabled={demoBusy || !demoLeadId}
-                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 hover:bg-slate-100 disabled:opacity-50"
-                    onClick={async () => {
-                      if (!demoLeadId) return;
-                      setDemoBusy(true);
-                      setDemoStatus("Simulating booking confirmation...");
-                      try {
-                        await vm.simulateCalBookingConfirmation(demoLeadId);
-                        setDemoStatus("Booking confirmation simulated.");
-                      } finally {
-                        setDemoBusy(false);
-                      }
-                    }}
-                  >
-                    Simulate booking confirmed
-                  </button>
-                </div>
-                {demoStatus ? <p className="mt-2 text-xs text-slate-700">{demoStatus}</p> : null}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-100 pb-3">
@@ -1478,11 +1400,13 @@ export function DashboardApp({
                   type="button"
                   onClick={() => setDashboardTab("active")}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                    dashboardTab === "active" ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    dashboardTab === "active" ? "bg-brand text-brand-ink shadow" : "border border-stone-200 bg-white text-brand-ink/75 hover:bg-brand/10"
                   }`}
                 >
                   Active leads
-                  <span className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "active" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                  <span
+                    className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "active" ? "bg-brand-ink/15 text-brand-ink" : "bg-stone-200/80 text-brand-ink/70"}`}
+                  >
                     {dashboardActiveLeads.length}
                   </span>
                 </button>
@@ -1490,24 +1414,14 @@ export function DashboardApp({
                   type="button"
                   onClick={() => setDashboardTab("lost")}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                    dashboardTab === "lost" ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    dashboardTab === "lost" ? "bg-brand text-brand-ink shadow" : "border border-stone-200 bg-white text-brand-ink/75 hover:bg-brand/10"
                   }`}
                 >
                   Lost leads
-                  <span className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "lost" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                  <span
+                    className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "lost" ? "bg-brand-ink/15 text-brand-ink" : "bg-stone-200/80 text-brand-ink/70"}`}
+                  >
                     {dashboardLostLeads.length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDashboardTab("pool")}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                    dashboardTab === "pool" ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  Lead pool
-                  <span className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "pool" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
-                    {dashboardLeadPool.length}
                   </span>
                 </button>
               </div>
@@ -1519,15 +1433,9 @@ export function DashboardApp({
                       <th className="p-2">Lead</th>
                       <th className="p-2">Source</th>
                       <th className="p-2">Status</th>
-                      {dashboardTab === "pool" ? (
-                        <th className="p-2">Outreach</th>
-                      ) : (
-                        <>
-                          <th className="p-2">Last reply</th>
-                          <th className="p-2">Meeting</th>
-                          {dashboardTab === "active" ? <th className="whitespace-nowrap p-2">Actions</th> : null}
-                        </>
-                      )}
+                      <th className="p-2">Last reply</th>
+                      <th className="p-2">Meeting</th>
+                      {dashboardTab === "active" ? <th className="whitespace-nowrap p-2">Actions</th> : null}
                       <th className="p-2">Score</th>
                       <th className="p-2">Tier</th>
                       <th className="p-2">Distance</th>
@@ -1554,7 +1462,7 @@ export function DashboardApp({
                           }}
                         >
                           <td className="p-2">
-                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="font-medium text-brand-ink">{lead.fullName}</p>
                             <p className="text-xs text-slate-500">{lead.company || lead.email}</p>
                           </td>
                           <td className="p-2">
@@ -1563,43 +1471,31 @@ export function DashboardApp({
                           <td className="p-2">
                             <StatusBadge status={lead.status} />
                           </td>
-                          {dashboardTab === "pool" ? (
-                            <td className="p-2 text-xs text-slate-700">
-                              {lead.outreachHistory.length ? (
-                                <span>{lead.outreachHistory.length} send{lead.outreachHistory.length === 1 ? "" : "s"}</span>
-                              ) : (
-                                <span className="text-slate-400">Not contacted</span>
-                              )}
+                          <td className="p-2 text-xs text-slate-700">
+                            {replyIso ? (
+                              <>
+                                <span className="font-medium text-brand-ink">{formatRelativeAgo(replyIso)}</span>
+                                <span className="mt-0.5 block text-[11px] text-slate-500">{new Date(replyIso).toLocaleString()}</span>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="p-2 text-xs">
+                            <span className="font-medium text-brand-ink/90">{mtg.label}</span>
+                            {mtg.detail ? <span className="mt-0.5 block text-[11px] text-slate-600">{mtg.detail}</span> : null}
+                          </td>
+                          {dashboardTab === "active" ? (
+                            <td className="p-2 align-middle" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="whitespace-nowrap rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
+                                onClick={() => void vm.markNotInterestedClient(lead.id)}
+                              >
+                                Retire to lost
+                              </button>
                             </td>
-                          ) : (
-                            <>
-                              <td className="p-2 text-xs text-slate-700">
-                                {replyIso ? (
-                                  <>
-                                    <span className="font-medium text-slate-900">{formatRelativeAgo(replyIso)}</span>
-                                    <span className="mt-0.5 block text-[11px] text-slate-500">{new Date(replyIso).toLocaleString()}</span>
-                                  </>
-                                ) : (
-                                  "—"
-                                )}
-                              </td>
-                              <td className="p-2 text-xs">
-                                <span className="font-medium text-slate-800">{mtg.label}</span>
-                                {mtg.detail ? <span className="mt-0.5 block text-[11px] text-slate-600">{mtg.detail}</span> : null}
-                              </td>
-                              {dashboardTab === "active" ? (
-                                <td className="p-2 align-middle" onClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    type="button"
-                                    className="whitespace-nowrap rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-900 hover:bg-rose-100"
-                                    onClick={() => void vm.markNotInterestedClient(lead.id)}
-                                  >
-                                    Retire to lost
-                                  </button>
-                                </td>
-                              ) : null}
-                            </>
-                          )}
+                          ) : null}
                           <td className="p-2 font-semibold">{lead.score}</td>
                           <td className="p-2">{lead.priorityTier}</td>
                           <td className="p-2">{lead.distanceMinutes} min</td>
@@ -1612,9 +1508,7 @@ export function DashboardApp({
                   <p className="p-6 text-center text-sm text-slate-500">
                     {dashboardTab === "active"
                       ? "No active replies right now. Replies show here until you retire them to lost."
-                      : dashboardTab === "lost"
-                        ? "No lost leads yet. Use Retire to lost on an active lead to archive them here."
-                        : "Lead pool is empty."}
+                      : "No lost leads yet. Use Retire to lost on an active lead to archive them here."}
                   </p>
                 )}
               </div>
@@ -1624,41 +1518,18 @@ export function DashboardApp({
 
           {activeView === "campaigns" && (
             <section className="card mb-4">
-              <div
-                className={`mb-3 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                  vm.outreachDryRun
-                    ? "border-amber-300 bg-amber-50 text-amber-900"
-                    : "border-rose-300 bg-rose-50 text-rose-900"
-                }`}
-              >
-                Current mode: {vm.outreachDryRun ? "DRY RUN (no sends)" : "LIVE SEND"}
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-brand-ink">Email deployment log</h2>
+                <div
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                    vm.outreachDryRun
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-rose-300 bg-rose-50 text-rose-900"
+                  }`}
+                >
+                  {vm.outreachDryRun ? "DRY RUN (no sends)" : "LIVE SEND"}
+                </div>
               </div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pipeline stats</p>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                {[
-                  ["Total Leads", vm.metrics.totalLeads],
-                  ["Qualified", vm.metrics.qualifiedLeads],
-                  ["CSV Leads", vm.metrics.csvLeads],
-                  ["External", vm.metrics.externalLeads],
-                  ["Online Enriched", vm.metrics.enrichedLeads],
-                  ["Campaigns", vm.metrics.campaignsLaunched],
-                  ["Emails Sent", vm.metrics.emailsSent],
-                  ["Replies", vm.metrics.replies],
-                  ["Positive Replies", vm.metrics.positiveReplies],
-                  ["Booking Sent", vm.metrics.bookingSent],
-                  ["Booked", vm.metrics.booked]
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded border border-slate-100 bg-slate-50 p-2">
-                    <p className="text-[11px] text-slate-500">{label}</p>
-                    <p className="text-sm font-semibold">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          {activeView === "campaigns" && (
-            <section className="card mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">Email deployment log</h2>
               <p className="mt-1 text-xs text-slate-600">Each launch batch with recipient coverage where tracked.</p>
               <ul className="mt-3 divide-y divide-slate-100">
                 {vm.campaigns.map((c) => {
@@ -1666,7 +1537,7 @@ export function DashboardApp({
                   const showNames = c.sentCount >= 1 && c.sentCount <= 5 && names.length > 0;
                   return (
                     <li key={c.id} className="py-3 text-sm">
-                      <p className="font-medium text-slate-900">{c.name}</p>
+                      <p className="font-medium text-brand-ink">{c.name}</p>
                       <p className="text-xs text-slate-600">
                         Sent: {c.sentCount} · Launched {new Date(c.launchedAt).toLocaleString()}
                       </p>
@@ -1715,7 +1586,7 @@ export function DashboardApp({
               <div className="card max-h-[220px] shrink-0 overflow-hidden shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900">Priority Inbox</h2>
+                    <h2 className="text-base font-semibold text-brand-ink">Priority Inbox</h2>
                     <p className="text-[11px] text-slate-600">Scroll horizontally to scan threads; full review below.</p>
                   </div>
                 </div>
@@ -1729,11 +1600,15 @@ export function DashboardApp({
                         type="button"
                         onClick={() => setInboxTab(tab)}
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition ${
-                          active ? "bg-slate-900 text-white shadow" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          active ? "bg-brand text-brand-ink shadow" : "border border-stone-200 bg-white text-brand-ink/75 hover:bg-brand/10"
                         }`}
                       >
                         {tab}
-                        <span className={`rounded-full px-1 py-0 text-[10px] ${active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>{n}</span>
+                        <span
+                          className={`rounded-full px-1 py-0 text-[10px] ${active ? "bg-brand-ink/15 text-brand-ink" : "bg-stone-200/80 text-brand-ink/70"}`}
+                        >
+                          {n}
+                        </span>
                       </button>
                     );
                   })}
@@ -1750,11 +1625,11 @@ export function DashboardApp({
                           setReviewEdit("");
                         }}
                         className={`min-w-[200px] max-w-[260px] shrink-0 rounded-lg border p-2.5 text-left transition ${
-                          active ? "border-slate-500 bg-stone-100 ring-2 ring-slate-300" : "border-slate-200 bg-white hover:border-slate-300"
+                          active ? "border-brand/50 bg-brand/10 ring-2 ring-brand/35" : "border-stone-200 bg-white hover:border-brand/35"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-1">
-                          <p className="text-xs font-semibold leading-tight text-slate-900">{t.fullName}</p>
+                          <p className="text-xs font-semibold leading-tight text-brand-ink">{t.fullName}</p>
                           {t.needsReview ? <span className="shrink-0 rounded bg-orange-100 px-1 py-0 text-[9px] font-semibold text-orange-900">Review</span> : null}
                         </div>
                         <p className="mt-0.5 truncate text-[10px] text-slate-500">{t.email}</p>
@@ -1788,7 +1663,7 @@ export function DashboardApp({
               </div>
 
               <section className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="mb-2 text-sm font-semibold text-slate-800">Phase 3 · Reply &amp; booking intelligence</p>
+                <p className="mb-2 text-sm font-semibold text-brand-ink/90">Phase 3 · Reply &amp; booking intelligence</p>
                 <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
                   {[
                     ["Inbound replies", vm.phase3Metrics.repliesReceived],
@@ -1811,24 +1686,24 @@ export function DashboardApp({
             <section className="space-y-4">
               <div className="card flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Bookings</h2>
+                  <h2 className="text-lg font-semibold text-brand-ink">Bookings</h2>
                   <p className="text-xs text-slate-600">Pipeline state and calendar confirmations. Lead source stays visible for attribution.</p>
                 </div>
                 <p className="text-sm text-slate-700">
                   Cal link:{" "}
-                  <span className="font-mono text-xs text-slate-900">{vm.bookingLinkDisplay || appConfig.bookingLink}</span>
+                  <span className="font-mono text-xs text-brand-ink">{vm.bookingLinkDisplay || appConfig.bookingLink}</span>
                 </p>
               </div>
               <div className="space-y-4">
                 <section className="card">
-                  <h3 className="text-base font-semibold text-slate-900">Invites · waiting for response</h3>
+                  <h3 className="text-base font-semibold text-brand-ink">Invites · waiting for response</h3>
                   <ul className="mt-3 divide-y divide-slate-100">
                     {bookingInviteList
                       .filter((r) => r.bucket === "waiting")
                       .map(({ lead, b }, i) => (
                         <li key={`w-${lead.id}-${i}`} className="flex flex-wrap items-start justify-between gap-2 py-3 text-sm">
                           <div>
-                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="font-medium text-brand-ink">{lead.fullName}</p>
                             <p className="text-xs text-slate-500">{lead.email}</p>
                             <p className="mt-1 text-[11px] text-slate-600">{new Date(b.at).toLocaleString()}</p>
                           </div>
@@ -1844,14 +1719,14 @@ export function DashboardApp({
                   ) : null}
                 </section>
                 <section className="card">
-                  <h3 className="text-base font-semibold text-slate-900">Accepted / confirmed</h3>
+                  <h3 className="text-base font-semibold text-brand-ink">Accepted / confirmed</h3>
                   <ul className="mt-3 divide-y divide-slate-100">
                     {bookingInviteList
                       .filter((r) => r.bucket === "accepted")
                       .map(({ lead, b }, i) => (
                         <li key={`a-${lead.id}-${i}`} className="flex flex-wrap items-start justify-between gap-2 py-3 text-sm">
                           <div>
-                            <p className="font-medium text-slate-900">{lead.fullName}</p>
+                            <p className="font-medium text-brand-ink">{lead.fullName}</p>
                             <p className="text-xs text-slate-500">{lead.email}</p>
                             {b.meetingStart ? (
                               <p className="mt-1 text-xs text-slate-700">{new Date(b.meetingStart).toLocaleString()}</p>
@@ -1869,13 +1744,13 @@ export function DashboardApp({
                   ) : null}
                 </section>
                 <details className="card">
-                  <summary className="cursor-pointer text-sm font-semibold text-slate-800">Declined / cancelled ({bookingInviteList.filter((r) => r.bucket === "closed").length})</summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-brand-ink/90">Declined / cancelled ({bookingInviteList.filter((r) => r.bucket === "closed").length})</summary>
                   <ul className="mt-3 divide-y divide-slate-100">
                     {bookingInviteList
                       .filter((r) => r.bucket === "closed")
                       .map(({ lead, b }, i) => (
                         <li key={`c-${lead.id}-${i}`} className="py-3 text-sm">
-                          <p className="font-medium text-slate-900">{lead.fullName}</p>
+                          <p className="font-medium text-brand-ink">{lead.fullName}</p>
                           <p className="text-xs text-slate-500">{b.note || b.status}</p>
                           <p className="text-[11px] text-slate-500">{new Date(b.at).toLocaleString()}</p>
                         </li>
@@ -1895,7 +1770,7 @@ export function DashboardApp({
           {activeView === "simulation" && (
             <section className="space-y-4">
               <div className="card">
-                <h2 className="text-lg font-semibold text-slate-900">Simulation</h2>
+                <h2 className="text-lg font-semibold text-brand-ink">Simulation</h2>
                 <p className="mt-1 text-xs text-slate-600">
                   Dev-only workflows: synthetic inbound messages, Cal booking confirmations, inbox seeding, mock classifier, and webhook checks. Use a sandbox lead when possible.
                 </p>
@@ -1923,10 +1798,10 @@ export function DashboardApp({
               />
 
               <div className="card space-y-3">
-                <p className="text-sm font-semibold text-slate-900">Bulk &amp; fixtures</p>
+                <p className="text-sm font-semibold text-brand-ink">Bulk &amp; fixtures</p>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-brand-ink/90 shadow-sm hover:bg-slate-50"
                   onClick={() =>
                     void vm.seedInboxSamples().then((r) => {
                       if (r?.ok === false && r.error) window.alert(r.error);
@@ -1939,7 +1814,7 @@ export function DashboardApp({
               </div>
 
               <div className="card space-y-4">
-                <p className="text-sm font-semibold text-slate-900">Cal webhook &amp; mock tools</p>
+                <p className="text-sm font-semibold text-brand-ink">Cal webhook &amp; mock tools</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -1976,14 +1851,14 @@ export function DashboardApp({
                   <button
                     type="button"
                     disabled={!simulationLeadId}
-                    className="rounded border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                    className="rounded border border-slate-200 bg-white px-3 py-1.5 text-sm text-brand-ink/90 hover:bg-slate-50 disabled:opacity-50"
                     onClick={() => simulationLeadId && void vm.enrichLead(simulationLeadId)}
                   >
                     Mock enrich (selected lead)
                   </button>
                 </div>
                 <div>
-                  <p className="mb-1 text-xs font-semibold text-slate-800">Mock reply classifier</p>
+                  <p className="mb-1 text-xs font-semibold text-brand-ink/90">Mock reply classifier</p>
                   <textarea
                     className="w-full max-w-2xl rounded border border-slate-200 p-2 text-sm"
                     rows={4}
@@ -1993,7 +1868,7 @@ export function DashboardApp({
                   />
                   <button
                     type="button"
-                    className="mt-2 rounded bg-slate-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                    className="mt-2 rounded bg-brand-inkLight px-3 py-2 text-sm text-white disabled:opacity-50"
                     disabled={!simulationLeadId}
                     onClick={() => simulationLeadId && void vm.applyMockReply(simulationLeadId, simReplyDraft)}
                   >

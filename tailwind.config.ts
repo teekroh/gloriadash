@@ -8,9 +8,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        /** Sandy clay + shadow grey — primary app palette */
         brand: {
-          DEFAULT: "#0F766E",
-          dark: "#134E4A"
+          DEFAULT: "#d4aa7d",
+          dark: "#b88a5e",
+          ink: "#272727",
+          inkLight: "#3a3a3a"
         }
       }
     }

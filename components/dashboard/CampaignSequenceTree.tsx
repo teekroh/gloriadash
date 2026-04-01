@@ -64,39 +64,39 @@ export function CampaignSequenceTree({
   );
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <h3 className="text-base font-semibold text-slate-900">Campaign sequence (editable)</h3>
-      <p className="mt-1 text-xs text-slate-600">
+    <div className="rounded-xl border border-stone-200 bg-white p-4">
+      <h3 className="text-base font-semibold text-brand-ink">Campaign sequence (editable)</h3>
+      <p className="mt-1 text-xs text-brand-ink/65">
         First-touch copy uses <strong>lead type classification</strong> only (not score or reply classifiers). City appears only when{" "}
         <strong>location confidence</strong> is high. Three examples per classification below. Other nodes are local previews only.
       </p>
-      <div className="relative mt-4 border-l-2 border-slate-200 pl-4">
+      <div className="relative mt-4 border-l-2 border-brand/30 pl-4">
         {TREE_LABELS.map((node, i) => (
           <div key={node.key} className="relative mb-4 last:mb-0">
-            <span className="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-slate-600 bg-white" />
+            <span className="absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full border-2 border-brand bg-white shadow-sm" />
             {node.key === "firstTouch" ? (
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                <p className="text-sm font-medium text-slate-800">{node.title}</p>
-                <p className="mt-1 text-[11px] text-slate-500">
+              <div className="rounded-lg border border-brand/15 bg-brand/5 p-3">
+                <p className="text-sm font-medium text-brand-ink/90">{node.title}</p>
+                <p className="mt-1 text-[11px] text-brand-ink/55">
                   First-touch uses a soft CTA only (no booking link in body). Booking link for display elsewhere:{" "}
                   <span className="font-mono text-[10px]">{bookingLinkDisplay || "—"}</span>
                 </p>
                 <div className="mt-3 space-y-5">
                   {classificationSamples.map((block) => (
                     <div key={block.classification}>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-brand-ink/70">
                         {block.label}{" "}
-                        <span className="font-mono font-normal normal-case text-slate-400">({block.classification})</span>
+                        <span className="font-mono font-normal normal-case text-brand-ink/45">({block.classification})</span>
                       </p>
                       <ul className="mt-1.5 space-y-2">
                         {block.rows.map((row, j) => (
                           <li
                             key={`${block.classification}-${j}`}
-                            className="rounded border border-white bg-white p-2 text-[11px] text-slate-700"
+                            className="rounded border border-stone-100 bg-white p-2 text-[11px] text-brand-ink/80"
                           >
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-[10px] text-slate-400">sample {j + 1}</span>
-                              <span className="text-[10px] text-slate-600">{row.label}</span>
+                              <span className="font-mono text-[10px] text-brand-ink/45">sample {j + 1}</span>
+                              <span className="text-[10px] text-brand-ink/65">{row.label}</span>
                               {row.locationOmitted ? (
                                 <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-950">
                                   Location omitted
@@ -116,24 +116,24 @@ export function CampaignSequenceTree({
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                <label className="text-sm font-medium text-slate-800" htmlFor={`seq-${node.key}`}>
+              <div className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                <label className="text-sm font-medium text-brand-ink/90" htmlFor={`seq-${node.key}`}>
                   {node.title}
                 </label>
                 <textarea
                   id={`seq-${node.key}`}
-                  className="mt-2 max-h-48 min-h-[88px] w-full rounded border border-slate-200 p-2 font-sans text-xs leading-relaxed text-slate-800"
+                  className="mt-2 max-h-48 min-h-[88px] w-full rounded border border-stone-200 p-2 font-sans text-xs leading-relaxed text-brand-ink/90"
                   value={copy[node.key]}
                   onChange={(e) => setCopy((prev) => ({ ...prev, [node.key]: e.target.value }))}
                 />
-                <p className="mt-1 text-[10px] text-slate-500">Local preview only for this node.</p>
-                <div className="mt-2 rounded border border-dashed border-slate-200 bg-slate-50/80 p-2 text-[11px] text-slate-700">
-                  <span className="font-semibold text-slate-600">Live preview</span>
+                <p className="mt-1 text-[10px] text-brand-ink/50">Local preview only for this node.</p>
+                <div className="mt-2 rounded border border-dashed border-brand/20 bg-brand/5 p-2 text-[11px] text-brand-ink/80">
+                  <span className="font-semibold text-brand-ink/70">Live preview</span>
                   <pre className="mt-1 max-h-20 overflow-y-auto whitespace-pre-wrap font-sans">{copy[node.key]}</pre>
                 </div>
               </div>
             )}
-            {i < TREE_LABELS.length - 1 && <div className="absolute left-[-17px] top-full h-4 w-px bg-slate-200" />}
+            {i < TREE_LABELS.length - 1 && <div className="absolute left-[-17px] top-full h-4 w-px bg-brand/25" />}
           </div>
         ))}
       </div>

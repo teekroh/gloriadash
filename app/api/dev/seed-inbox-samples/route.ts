@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { processInboundEmail } from "@/services/inboundProcessingService";
 import { SIMULATED_INBOUND_SCENARIOS, SIMULATED_SCENARIO_ORDER, SimulatedScenario } from "@/services/inboundSimulation";
+import { blockInProductionUnlessEnabled, requireAdminApiKey } from "@/lib/apiRouteSecurity";
 
 export async function GET() {
+  const blocked = blockInProductionUnlessEnabled("ALLOW_DEV_ROUTES");
+  if (blocked) return blocked;
   return NextResponse.json({
     hint: "POST with no body runs one simulated inbound per classification, using the top leads by score (unique lead per scenario). Respects DRY_RUN for outbound.",
     scenarios: SIMULATED_SCENARIO_ORDER,
@@ -11,7 +14,11 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const blocked = blockInProductionUnlessEnabled("ALLOW_DEV_ROUTES");
+  if (blocked) return blocked;
+  const authErr = requireAdminApiKey(request);
+  if (authErr) return authErr;
   const leads = await db.lead.findMany({
     orderBy: { score: "desc" },
     take: SIMULATED_SCENARIO_ORDER.length,
