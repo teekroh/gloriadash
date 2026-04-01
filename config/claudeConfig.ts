@@ -6,8 +6,8 @@
  * CLAUDE_COPY_DISABLED=true — keep key installed but force template-only copy.
  */
 
-/** Default when ANTHROPIC_MODEL is unset. Older IDs (e.g. claude-3-5-sonnet-20241022) may 404 on the API. */
-export const CLAUDE_DEFAULT_MODEL = "claude-sonnet-4-20250514";
+/** Default when ANTHROPIC_MODEL is unset. Older IDs may 404 on the API — confirm in Anthropic models docs. */
+export const CLAUDE_DEFAULT_MODEL = "claude-sonnet-4-6";
 
 export function anthropicApiKey(): string {
   return process.env.ANTHROPIC_API_KEY?.trim() ?? "";
