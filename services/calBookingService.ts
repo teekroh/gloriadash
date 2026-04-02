@@ -183,9 +183,20 @@ export async function processCalBookingPayload(body: unknown): Promise<{
     campaignId = cl?.campaignId ?? undefined;
   }
 
-  // Event handlers. Modern Cal payloads always set `triggerEvent`; do not treat unknown triggers as "created"
-  // (would mis-handle BOOKING_CANCELLED etc. if detection failed).
-  if (eventType === "booking.created" || (!eventType && !triggerRaw && (isMock || rootHasLegacyFields))) {
+  const calBookingStatus =
+    bookingFromPayload && typeof (bookingFromPayload as Json).status === "string"
+      ? String((bookingFromPayload as Json).status).toUpperCase()
+      : "";
+
+  /** Confirmed slot in Cal (instant book or after host approval / payment). */
+  const shouldMarkBookedFromCreate =
+    eventType === "booking.created" ||
+    (!eventType && !triggerRaw && (isMock || rootHasLegacyFields)) ||
+    (eventType === "booking.requested" &&
+      (calBookingStatus === "ACCEPTED" || calBookingStatus === "APPROVED" || calBookingStatus === "CONFIRMED"));
+
+  // Event handlers — see https://cal.com/docs/developing/guides/automation/webhooks (BOOKING_CREATED, BOOKING_REQUESTED, etc.)
+  if (shouldMarkBookedFromCreate) {
     const result = await markBooked(leadId, {
       externalBookingId,
       meetingStart,
@@ -194,6 +205,14 @@ export async function processCalBookingPayload(body: unknown): Promise<{
     });
     if (!result.ok) return { ok: false, error: result.error ?? "markBooked failed" };
     return { ok: true, duplicate: result.duplicate, leadId };
+  }
+
+  if (eventType === "booking.requested") {
+    console.warn("[Cal Booking] BOOKING_REQUESTED but payload not accepted yet; waiting for BOOKING_CREATED", {
+      calBookingStatus: calBookingStatus || null,
+      leadId
+    });
+    return { ok: true, leadId };
   }
 
   if (eventType === "booking.rescheduled") {
@@ -319,8 +338,21 @@ export function detectCalBookingEventType(body: unknown): string | undefined {
   const te =
     typeof root.triggerEvent === "string" ? root.triggerEvent.trim().toUpperCase().replace(/\./g, "_") : "";
   if (te === "BOOKING_CREATED") return "booking.created";
+  /** Paid / finalized slot — treat like confirmed booking (Cal.com). */
+  if (te === "BOOKING_PAID") return "booking.created";
   if (te === "BOOKING_RESCHEDULED") return "booking.rescheduled";
   if (te === "BOOKING_CANCELLED") return "booking.cancelled";
+  /** Host-approval flows: may arrive with status PENDING first; ACCEPTED should mark Booked. */
+  if (te === "BOOKING_REQUESTED") return "booking.requested";
+
+  const nestedTeRaw = asObj(root.payload)?.triggerEvent;
+  if (typeof nestedTeRaw === "string") {
+    const n = nestedTeRaw.trim().toUpperCase().replace(/\./g, "_");
+    if (n === "BOOKING_CREATED" || n === "BOOKING_PAID") return "booking.created";
+    if (n === "BOOKING_REQUESTED") return "booking.requested";
+    if (n === "BOOKING_RESCHEDULED") return "booking.rescheduled";
+    if (n === "BOOKING_CANCELLED") return "booking.cancelled";
+  }
 
   const direct =
     root.event && typeof root.event === "string"

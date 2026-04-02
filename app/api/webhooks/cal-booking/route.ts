@@ -118,11 +118,12 @@ export async function POST(request: Request) {
     secretPayloadPresent: Boolean(secretFromPayload),
     secretValidated: true
   });
+  let calResult: { ok: boolean; error?: string; leadId?: string; duplicate?: boolean } | null = null;
   try {
-    await processCalBookingPayload(body);
+    calResult = await processCalBookingPayload(body);
   } catch (err) {
     console.error(`[Cal Webhook] processing error`, { requestId, eventType, error: String(err) });
   }
-  console.log(`[Cal Webhook] done`, { requestId, eventType });
-  return NextResponse.json({ ok: true });
+  console.log(`[Cal Webhook] done`, { requestId, eventType, calResult });
+  return NextResponse.json({ ok: true, ...calResult });
 }
