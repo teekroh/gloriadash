@@ -18,6 +18,7 @@ import { listDashboardNotifications } from "@/services/dashboardNotificationServ
 import { processInboundEmail } from "@/services/inboundProcessingService";
 import { sendOutreachEmail } from "@/services/outreachSendService";
 import { geocodeCityStateZip } from "@/services/nominatimGeocode";
+import { normalizeWebsiteHost } from "@/services/placesLeadDiscoveryService";
 import { pipelineStatusForTier, scoreLeadBase } from "@/services/scoringService";
 import type { CreateManualLeadPayload, Lead, LeadStatus } from "@/types/lead";
 import {
@@ -141,6 +142,11 @@ export const createManualLead = async (
       ? Math.min(100, Math.max(0, Math.round(Number(input.addressConfidence))))
       : null;
 
+  const rawSite = typeof input.websiteUri === "string" ? input.websiteUri.trim() : "";
+  const websiteUri =
+    rawSite.length > 0 ? (rawSite.startsWith("http") ? rawSite : `https://${rawSite}`) : null;
+  const websiteHost = websiteUri ? normalizeWebsiteHost(websiteUri) : null;
+
   await db.lead.create({
     data: {
       id,
@@ -153,6 +159,8 @@ export const createManualLead = async (
       city: (input.city ?? "").trim(),
       state: (input.state ?? "").trim(),
       zip: (input.zip ?? "").trim(),
+      websiteUri,
+      websiteHost,
       leadType: input.leadType,
       source: "Manual",
       sourceDetail: (input.sourceDetail ?? "").trim() || "Added from lead library",
@@ -180,6 +188,15 @@ export const createManualLead = async (
 
   return { ok: true, id };
 };
+
+export async function deleteLeadById(leadId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await db.lead.delete({ where: { id: leadId } });
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, error: "not_found" };
+  }
+}
 
 export const ensureSeeded = async () => {
   const count = await db.lead.count();

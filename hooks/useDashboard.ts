@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { InboxThread, Phase3Metrics } from "@/services/dashboardAggregation";
 import type { SimulatedScenario } from "@/services/inboundSimulation";
 import { Campaign } from "@/types/campaign";
@@ -539,6 +539,43 @@ export const useDashboard = (
     };
   };
 
+  const askDashboardAssistant = useCallback(
+    async (message: string, context: unknown) => {
+      const res = await fetch("/api/dashboard/assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+        },
+        body: JSON.stringify({ message, context })
+      });
+      return (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        mode?: string;
+        text?: string;
+        summary?: string;
+        leadId?: string;
+      };
+    },
+    [adminApiKey]
+  );
+
+  const deleteLeadClient = useCallback(
+    async (leadId: string) => {
+      const res = await fetch(`/api/leads/${leadId}`, {
+        method: "DELETE",
+        headers: {
+          ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+        }
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      await refresh();
+      return { ok: res.ok && data.ok !== false, error: data.error };
+    },
+    [adminApiKey]
+  );
+
   return {
     leads,
     inboxThreads,
@@ -581,6 +618,8 @@ export const useDashboard = (
     notifications,
     markNotificationsRead,
     dispatchScheduledDue,
-    syncGoogleCalendarBookings
+    syncGoogleCalendarBookings,
+    askDashboardAssistant,
+    deleteLeadClient
   };
 };

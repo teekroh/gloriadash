@@ -138,6 +138,8 @@ export type CreateManualLeadPayload = {
   notes?: string;
   addressConfidence?: number | null;
   sourceDetail?: string;
+  /** Optional homepage when importing from URL (assistant / tooling). */
+  websiteUri?: string | null;
 };
 
 export type ReplyCategory =

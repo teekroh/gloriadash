@@ -791,7 +791,7 @@ export function DashboardApp({
   const [campaignConfirmLow, setCampaignConfirmLow] = useState(false);
   const [campaignOverrideVerify, setCampaignOverrideVerify] = useState(false);
   const [activeView, setActiveView] = useState<(typeof SIDEBAR_VIEWS)[number]>("dashboard");
-  const [dashboardTab, setDashboardTab] = useState<"active" | "lost">("active");
+  const [dashboardTab, setDashboardTab] = useState<"active" | "in_campaign" | "lost">("active");
   const [bookingDetailPick, setBookingDetailPick] = useState<BookingInviteRow | null>(null);
   const [inboxLeadId, setInboxLeadId] = useState<string | null>(null);
   /** Which inbound message thread is active when one lead has multiple inbox rows. */
@@ -805,6 +805,9 @@ export function DashboardApp({
   const [libraryEditLeadId, setLibraryEditLeadId] = useState<string | null>(null);
   const [libraryEditDraft, setLibraryEditDraft] = useState<LeadProfileDraft | null>(null);
   const [libraryEditBusy, setLibraryEditBusy] = useState(false);
+  const [assistantLine, setAssistantLine] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantReply, setAssistantReply] = useState<string | null>(null);
   const [placesDiscoverBusy, setPlacesDiscoverBusy] = useState(false);
   const [addLeadForm, setAddLeadForm] = useState({
     firstName: "",
@@ -1003,7 +1006,16 @@ export function DashboardApp({
     () => vm.leads.filter((l) => (l.replyHistory?.length ?? 0) > 0 && isLostLead(l)),
     [vm.leads]
   );
-  const dashboardRows = dashboardTab === "active" ? dashboardActiveLeads : dashboardLostLeads;
+  const dashboardInCampaignLeads = useMemo(
+    () => vm.leads.filter((l) => l.status === "In Campaign"),
+    [vm.leads]
+  );
+  const dashboardRows =
+    dashboardTab === "active"
+      ? dashboardActiveLeads
+      : dashboardTab === "in_campaign"
+        ? dashboardInCampaignLeads
+        : dashboardLostLeads;
 
   const sortedDashboardRows = useMemo(() => {
     const rows = [...dashboardRows];
@@ -1019,6 +1031,11 @@ export function DashboardApp({
     };
     if (dashboardTab === "lost") {
       rows.sort(byLastReplyDesc);
+    } else if (dashboardTab === "in_campaign") {
+      rows.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.fullName.localeCompare(b.fullName);
+      });
     } else {
       rows.sort((a, b) => {
         const ra = leadNeedsInboxReview(a) ? 0 : 1;
@@ -1050,6 +1067,40 @@ export function DashboardApp({
         .slice(0, 8),
     [vm.leads]
   );
+
+  const runDashboardAssistant = useCallback(async () => {
+    const msg = assistantLine.trim();
+    if (!msg) return;
+    setAssistantBusy(true);
+    try {
+      const context = {
+        activeView,
+        totalLeads: vm.metrics.totalLeads,
+        qualifiedLeads: vm.metrics.qualifiedLeads,
+        campaignsLaunched: vm.metrics.campaignsLaunched,
+        replies: vm.metrics.replies,
+        bookingLinkConfigured: vm.bookingLinkConfigured,
+        outreachDryRun: vm.outreachDryRun
+      };
+      const data = await vm.askDashboardAssistant(msg, context);
+      if (data.ok && data.mode === "lead_created") {
+        setAssistantReply(data.summary ?? "Lead created — open Verify to review.");
+        setAssistantLine("");
+        await vm.refresh();
+      } else if (data.ok && data.text) {
+        setAssistantReply(data.text);
+        setAssistantLine("");
+      } else {
+        setAssistantReply(
+          data.error === "Unauthorized." || String(data.error ?? "").includes("Unauthorized")
+            ? "Unauthorized — in production set NEXT_PUBLIC_ADMIN_API_KEY to match ADMIN_API_KEY."
+            : data.error ?? "Request failed."
+        );
+      }
+    } finally {
+      setAssistantBusy(false);
+    }
+  }, [assistantLine, activeView, vm]);
 
   return (
     <div className="min-h-screen">
@@ -1147,152 +1198,7 @@ export function DashboardApp({
           )}
 
           {activeView === "leads" && (
-            <section className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-11">
-              {(
-                [
-                  { label: "Total Leads", value: vm.metrics.totalLeads, filter: "reset" as const },
-                  { label: "Qualified", value: vm.metrics.qualifiedLeads, filter: null },
-                  { label: "CSV Leads", value: vm.metrics.csvLeads, filter: "source_csv" as const },
-                  { label: "External", value: vm.metrics.externalLeads, filter: "source_external" as const },
-                  { label: "Online Enriched", value: vm.metrics.enrichedLeads, filter: null },
-                  { label: "Campaigns", value: vm.metrics.campaignsLaunched, filter: null },
-                  { label: "Emails Sent", value: vm.metrics.emailsSent, filter: null },
-                  { label: "Replies", value: vm.metrics.replies, filter: null },
-                  { label: "Positive Replies", value: vm.metrics.positiveReplies, filter: null },
-                  { label: "Booking Sent", value: vm.metrics.bookingSent, filter: "status_booking_sent" as const },
-                  { label: "Booked", value: vm.metrics.booked, filter: "status_booked" as const },
-                  { label: "Addr score 86+", value: vm.addressMetrics.verified, filter: "addr_86" as const },
-                  { label: "Addr score 71+", value: vm.addressMetrics.good, filter: "addr_71" as const },
-                  { label: "Addr <71 (review)", value: vm.addressMetrics.low, filter: "addr_lt71" as const },
-                  { label: "Addr ≤10 (very poor)", value: vm.addressMetrics.veryPoor, filter: "addr_very_poor" as const }
-                ] as const
-              ).map(({ label, value, filter }) => {
-                const interactive = filter !== null;
-                const inner = (
-                  <>
-                    <p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{label}</p>
-                    <p className="text-sm font-bold tabular-nums leading-tight text-brand-ink">{value}</p>
-                  </>
-                );
-                const boxClass =
-                  "rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left shadow-sm transition-colors" +
-                  (interactive ? " cursor-pointer hover:border-slate-400 hover:bg-slate-50" : "");
-                if (!interactive) {
-                  return (
-                    <div key={label} className={boxClass}>
-                      {inner}
-                    </div>
-                  );
-                }
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    className={boxClass}
-                    title="Apply matching filters to the lead library below"
-                    onClick={() => applyLeadStatFilter(filter)}
-                  >
-                    {inner}
-                  </button>
-                );
-              })}
-            </section>
-          )}
-          {activeView === "leads" && (
-            <section className="mb-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
-              <p className="font-semibold text-brand-ink/90">
-                <span title={ADDRESS_CONFIDENCE_TOOLTIP} className="cursor-help border-b border-dotted border-slate-400">
-                  Address confidence bands
-                </span>{" "}
-                (selected CSV pass)
-              </p>
-              <p className="mt-1">
-                Strong 86+: {vm.addressMetrics.bands.strong} · Good 71–85: {vm.addressMetrics.bands.good} · Caution 51–70:{" "}
-                {vm.addressMetrics.bands.caution} · Weak 31–50: {vm.addressMetrics.bands.weak} · Poor 0–30:{" "}
-                {vm.addressMetrics.bands.poor} · Unknown: {vm.addressMetrics.bands.unknown}
-              </p>
-              <p className="mt-1 font-medium text-brand-ink/90">
-                Outreach-ready by classification (addr ≥{OUTREACH_ADDRESS_MIN_DEFAULT}, not DNC): designer/architect{" "}
-                {vm.addressMetrics.byClass.designer_architect} · builder/contractor {vm.addressMetrics.byClass.builder_contractor} · cabinet partner{" "}
-                {vm.addressMetrics.byClass.cabinet_shop_partner} · homeowner {vm.addressMetrics.byClass.homeowner}
-              </p>
-            </section>
-          )}
-          {activeView === "leads" && (
-            <section className="mb-4 grid grid-cols-4 gap-3">
-              {[
-                ["CSV Import", vm.sourceCounts["CSV Import"] ?? 0],
-                ["Online Enriched", vm.sourceCounts["Online Enriched"] ?? 0],
-                ["Scraped / External", vm.sourceCounts["Scraped / External"] ?? 0],
-                ["Manual", vm.sourceCounts.Manual ?? 0]
-              ].map(([label, value]) => (
-                <div key={label} className="card">
-                  <p className="text-xs text-slate-500">Source: {label}</p>
-                  <p className="text-2xl font-bold">{value}</p>
-                </div>
-              ))}
-            </section>
-          )}
-
-          {activeView === "leads" && (
-            <section className="mb-4 card text-sm">
-              <p className="font-semibold">CSV Import Summary</p>
-              <p>
-                File: <strong>resources/{importSummary.sourceFile}</strong> · Total rows: {importSummary.totalRows} | Valid rows:{" "}
-                {importSummary.validRows} | Skipped: {importSummary.skippedRows} | Duplicates: {importSummary.duplicateRows}
-              </p>
-            </section>
-          )}
-
-          {activeView === "leads" && (
-            <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-xs text-amber-950">
-              <p className="font-semibold text-brand-ink/90">Web discovery (Google Places)</p>
-              <p className="mt-1 text-[11px] leading-snug opacity-95">
-                Creates up to <strong>5</strong> leads per run (<strong>Scraped / External</strong>) via Places Text Search —{" "}
-                <strong>billed</strong> on your Google Cloud / Maps account (
-                <a
-                  className="font-medium text-brand-ink underline"
-                  href="https://developers.google.com/maps/documentation/places/web-service/usage-and-billing"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  usage and billing
-                </a>
-                ). Needs <code className="rounded bg-white/80 px-1">GOOGLE_PLACES_API_KEY</code>, optional{" "}
-                <code className="rounded bg-white/80 px-1">PLACES_DISCOVER_DEFAULT_QUERY</code>, and the same admin access as other dev tools.
-              </p>
-              <p className="mt-2 text-[11px] leading-snug text-slate-800">
-                <strong className="text-brand-ink/90">No Places key?</strong> Use <strong>CSV import</strong>, <strong>Add lead</strong>, or{" "}
-                <strong>Enrich</strong> on a row (OpenStreetMap / Nominatim geocode — free with a proper{" "}
-                <code className="rounded bg-white/70 px-1">NOMINATIM_USER_AGENT</code>). Inline web results in Verify can use Google Custom Search (
-                <code className="rounded bg-white/70 px-1">GOOGLE_CSE_*</code>, 100 queries/day free tier) if you add keys; otherwise use browser search there.
-              </p>
-              <button
-                type="button"
-                disabled={placesDiscoverBusy}
-                className="mt-3 rounded-md bg-brand px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-dark disabled:opacity-50"
-                onClick={() => {
-                  setPlacesDiscoverBusy(true);
-                  void vm
-                    .placesDiscoverLeads({ limit: 5 })
-                    .then((r) => {
-                      if (!r.ok) {
-                        window.alert(r.error ?? "Places discover failed.");
-                        return;
-                      }
-                      window.alert(
-                        `Created ${r.created ?? 0} lead(s), skipped ${r.skipped ?? 0}. Query: ${r.queryUsed ?? "—"}\n\n${(r.pricingNote ?? "").slice(0, 280)}${(r.pricingNote?.length ?? 0) > 280 ? "…" : ""}`
-                      );
-                    })
-                    .finally(() => setPlacesDiscoverBusy(false));
-                }}
-              >
-                {placesDiscoverBusy ? "Discovering…" : "Run Places discover (up to 5)"}
-              </button>
-            </section>
-          )}
-
-          {activeView === "leads" && (
+            <>
             <section className="card overflow-hidden border-t-4 border-brand/35 bg-gradient-to-b from-white to-slate-50 shadow-sm">
                 {addLeadOpen ? (
                   <div
@@ -1525,6 +1431,29 @@ export function DashboardApp({
                       >
                         Add lead
                       </button>
+                      <button
+                        type="button"
+                        disabled={vm.selectedIds.length === 0}
+                        className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={async () => {
+                          if (vm.selectedIds.length === 0) {
+                            window.alert("Select one or more leads in the table (checkboxes) before launching.");
+                            return;
+                          }
+                          const data = await vm.launchCampaign(campaignName, launchAddressOpts);
+                          if (data && "ok" in data && data.ok && data.result) {
+                            const r = data.result;
+                            window.alert(
+                              `${r.dryRun ? "Dry run" : "Live send"} complete: ${r.sentCount} sent · limit skips ${r.skippedByLimit} · ` +
+                                `addr policy ${r.skippedByAddressPolicy} · very poor ${r.skippedVeryPoor} · verify gate ${r.skippedByDeployVerify ?? 0} · DNC ${r.skippedDoNotContact}`
+                            );
+                          } else if (data && "ok" in data && !data.ok) {
+                            window.alert((data as { error?: string }).error ?? "Launch blocked.");
+                          }
+                        }}
+                      >
+                        Launch campaign ({vm.selectedIds.length})
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1729,67 +1658,104 @@ export function DashboardApp({
                       <div className="mt-4">
                         <LeadProfileForm value={libraryEditDraft} onChange={setLibraryEditDraft} />
                       </div>
-                      <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+                      <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
                         <button
                           type="button"
                           disabled={libraryEditBusy}
-                          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-brand-ink/90 hover:bg-slate-50 disabled:opacity-50"
-                          onClick={() => {
-                            if (!libraryEditBusy) {
-                              setLibraryEditLeadId(null);
-                              setLibraryEditDraft(null);
-                            }
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={libraryEditBusy}
-                          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-ink hover:bg-brand-dark disabled:opacity-50"
+                          className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-900 hover:bg-rose-100 disabled:opacity-50"
                           onClick={async () => {
-                            if (!libraryEditLeadId) return;
+                            const id = libraryEditLeadId;
+                            if (!id) return;
+                            if (
+                              !window.confirm(
+                                "Delete this lead permanently? Related messages, follow-ups, bookings, and campaign links are removed."
+                              )
+                            ) {
+                              return;
+                            }
                             setLibraryEditBusy(true);
                             try {
-                              const res = await fetch(`/api/leads/${libraryEditLeadId}`, {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ profile: profileDraftToApiPayload(libraryEditDraft) })
-                              });
-                              if (res.status === 409) {
-                                window.alert("That email is already used by another lead.");
-                                return;
-                              }
-                              if (res.status === 400) {
-                                const err = (await res.json().catch(() => ({}))) as { error?: string };
-                                const code = err.error;
+                              const r = await vm.deleteLeadClient(id);
+                              if (!r.ok) {
                                 window.alert(
-                                  code === "invalid_email"
-                                    ? "Enter a valid email or leave it empty."
-                                    : code === "full_name_required"
-                                      ? "Enter a name (at least a first name)."
-                                      : code === "invalid_lead_type"
-                                        ? "Invalid lead type."
-                                        : code === "profile_required"
-                                          ? "Invalid save request."
-                                          : "Could not save lead."
+                                  r.error === "Unauthorized." || String(r.error ?? "").includes("Unauthorized")
+                                    ? "Unauthorized — in production set NEXT_PUBLIC_ADMIN_API_KEY to match ADMIN_API_KEY."
+                                    : r.error ?? "Could not delete lead."
                                 );
                                 return;
                               }
-                              if (!res.ok) {
-                                window.alert("Could not save lead.");
-                                return;
-                              }
                               setLibraryEditLeadId(null);
                               setLibraryEditDraft(null);
-                              await vm.refresh();
+                              vm.setSelectedIds((sel) => sel.filter((x) => x !== id));
                             } finally {
                               setLibraryEditBusy(false);
                             }
                           }}
                         >
-                          {libraryEditBusy ? "Saving…" : "Save"}
+                          Delete lead
                         </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={libraryEditBusy}
+                            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-brand-ink/90 hover:bg-slate-50 disabled:opacity-50"
+                            onClick={() => {
+                              if (!libraryEditBusy) {
+                                setLibraryEditLeadId(null);
+                                setLibraryEditDraft(null);
+                              }
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={libraryEditBusy}
+                            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-ink hover:bg-brand-dark disabled:opacity-50"
+                            onClick={async () => {
+                              if (!libraryEditLeadId) return;
+                              setLibraryEditBusy(true);
+                              try {
+                                const res = await fetch(`/api/leads/${libraryEditLeadId}`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ profile: profileDraftToApiPayload(libraryEditDraft) })
+                                });
+                                if (res.status === 409) {
+                                  window.alert("That email is already used by another lead.");
+                                  return;
+                                }
+                                if (res.status === 400) {
+                                  const err = (await res.json().catch(() => ({}))) as { error?: string };
+                                  const code = err.error;
+                                  window.alert(
+                                    code === "invalid_email"
+                                      ? "Enter a valid email or leave it empty."
+                                      : code === "full_name_required"
+                                        ? "Enter a name (at least a first name)."
+                                        : code === "invalid_lead_type"
+                                          ? "Invalid lead type."
+                                          : code === "profile_required"
+                                            ? "Invalid save request."
+                                            : "Could not save lead."
+                                  );
+                                  return;
+                                }
+                                if (!res.ok) {
+                                  window.alert("Could not save lead.");
+                                  return;
+                                }
+                                setLibraryEditLeadId(null);
+                                setLibraryEditDraft(null);
+                                await vm.refresh();
+                              } finally {
+                                setLibraryEditBusy(false);
+                              }
+                            }}
+                          >
+                            {libraryEditBusy ? "Saving…" : "Save"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1868,27 +1834,9 @@ export function DashboardApp({
                       override above.
                     </p>
                   ) : null}
-                  <button
-                    onClick={async () => {
-                      if (vm.selectedIds.length === 0) {
-                        window.alert("Select one or more leads in the table (checkboxes) before launching.");
-                        return;
-                      }
-                      const data = await vm.launchCampaign(campaignName, launchAddressOpts);
-                      if (data && "ok" in data && data.ok && data.result) {
-                        const r = data.result;
-                        window.alert(
-                          `${r.dryRun ? "Dry run" : "Live send"} complete: ${r.sentCount} sent · limit skips ${r.skippedByLimit} · ` +
-                            `addr policy ${r.skippedByAddressPolicy} · very poor ${r.skippedVeryPoor} · verify gate ${r.skippedByDeployVerify ?? 0} · DNC ${r.skippedDoNotContact}`
-                        );
-                      } else if (data && "ok" in data && !data.ok) {
-                        window.alert((data as { error?: string }).error ?? "Launch blocked.");
-                      }
-                    }}
-                    className="rounded bg-brand px-3 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-dark"
-                  >
-                    Launch Campaign ({vm.selectedIds.length})
-                  </button>
+                  <p className="w-full text-[11px] text-slate-500">
+                    Launch with the green <strong>Launch campaign</strong> button in the lead library header (campaign name and checkboxes here apply).
+                  </p>
                 </div>
 
                 {selectedLeads.length > 0 ? (
@@ -1970,19 +1918,182 @@ export function DashboardApp({
                 </div>
                 </div>
             </section>
+
+            <section className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-11">
+              {(
+                [
+                  { label: "Total Leads", value: vm.metrics.totalLeads, filter: "reset" as const },
+                  { label: "Qualified", value: vm.metrics.qualifiedLeads, filter: null },
+                  { label: "CSV Leads", value: vm.metrics.csvLeads, filter: "source_csv" as const },
+                  { label: "External", value: vm.metrics.externalLeads, filter: "source_external" as const },
+                  { label: "Online Enriched", value: vm.metrics.enrichedLeads, filter: null },
+                  { label: "Campaigns", value: vm.metrics.campaignsLaunched, filter: null },
+                  { label: "Emails Sent", value: vm.metrics.emailsSent, filter: null },
+                  { label: "Replies", value: vm.metrics.replies, filter: null },
+                  { label: "Positive Replies", value: vm.metrics.positiveReplies, filter: null },
+                  { label: "Booking Sent", value: vm.metrics.bookingSent, filter: "status_booking_sent" as const },
+                  { label: "Booked", value: vm.metrics.booked, filter: "status_booked" as const },
+                  { label: "Addr score 86+", value: vm.addressMetrics.verified, filter: "addr_86" as const },
+                  { label: "Addr score 71+", value: vm.addressMetrics.good, filter: "addr_71" as const },
+                  { label: "Addr <71 (review)", value: vm.addressMetrics.low, filter: "addr_lt71" as const },
+                  { label: "Addr ≤10 (very poor)", value: vm.addressMetrics.veryPoor, filter: "addr_very_poor" as const }
+                ] as const
+              ).map(({ label, value, filter }) => {
+                const interactive = filter !== null;
+                const inner = (
+                  <>
+                    <p className="line-clamp-2 text-[10px] leading-tight text-slate-500">{label}</p>
+                    <p className="text-sm font-bold tabular-nums leading-tight text-brand-ink">{value}</p>
+                  </>
+                );
+                const boxClass =
+                  "rounded-md border border-slate-200 bg-white px-1.5 py-1 text-left shadow-sm transition-colors" +
+                  (interactive ? " cursor-pointer hover:border-slate-400 hover:bg-slate-50" : "");
+                if (!interactive) {
+                  return (
+                    <div key={label} className={boxClass}>
+                      {inner}
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className={boxClass}
+                    title="Apply matching filters to the lead library table above"
+                    onClick={() => applyLeadStatFilter(filter)}
+                  >
+                    {inner}
+                  </button>
+                );
+              })}
+            </section>
+            <section className="mb-3 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
+              <p className="font-semibold text-brand-ink/90">
+                <span title={ADDRESS_CONFIDENCE_TOOLTIP} className="cursor-help border-b border-dotted border-slate-400">
+                  Address confidence bands
+                </span>{" "}
+                (selected CSV pass)
+              </p>
+              <p className="mt-1">
+                Strong 86+: {vm.addressMetrics.bands.strong} · Good 71–85: {vm.addressMetrics.bands.good} · Caution 51–70:{" "}
+                {vm.addressMetrics.bands.caution} · Weak 31–50: {vm.addressMetrics.bands.weak} · Poor 0–30:{" "}
+                {vm.addressMetrics.bands.poor} · Unknown: {vm.addressMetrics.bands.unknown}
+              </p>
+              <p className="mt-1 font-medium text-brand-ink/90">
+                Outreach-ready by classification (addr ≥{OUTREACH_ADDRESS_MIN_DEFAULT}, not DNC): designer/architect{" "}
+                {vm.addressMetrics.byClass.designer_architect} · builder/contractor {vm.addressMetrics.byClass.builder_contractor} · cabinet partner{" "}
+                {vm.addressMetrics.byClass.cabinet_shop_partner} · homeowner {vm.addressMetrics.byClass.homeowner}
+              </p>
+            </section>
+            <section className="mb-4 grid grid-cols-4 gap-3">
+              {[
+                ["CSV Import", vm.sourceCounts["CSV Import"] ?? 0],
+                ["Online Enriched", vm.sourceCounts["Online Enriched"] ?? 0],
+                ["Scraped / External", vm.sourceCounts["Scraped / External"] ?? 0],
+                ["Manual", vm.sourceCounts.Manual ?? 0]
+              ].map(([label, value]) => (
+                <div key={label} className="card">
+                  <p className="text-xs text-slate-500">Source: {label}</p>
+                  <p className="text-2xl font-bold">{value}</p>
+                </div>
+              ))}
+            </section>
+            <section className="mb-4 card text-sm">
+              <p className="font-semibold">CSV Import Summary</p>
+              <p>
+                File: <strong>resources/{importSummary.sourceFile}</strong> · Total rows: {importSummary.totalRows} | Valid rows:{" "}
+                {importSummary.validRows} | Skipped: {importSummary.skippedRows} | Duplicates: {importSummary.duplicateRows}
+              </p>
+            </section>
+            <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-xs text-amber-950">
+              <p className="font-semibold text-brand-ink/90">Web discovery (Google Places)</p>
+              <p className="mt-1 text-[11px] leading-snug opacity-95">
+                Creates up to <strong>5</strong> leads per run (<strong>Scraped / External</strong>) via Places Text Search —{" "}
+                <strong>billed</strong> on your Google Cloud / Maps account (
+                <a
+                  className="font-medium text-brand-ink underline"
+                  href="https://developers.google.com/maps/documentation/places/web-service/usage-and-billing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  usage and billing
+                </a>
+                ). Needs <code className="rounded bg-white/80 px-1">GOOGLE_PLACES_API_KEY</code>, optional{" "}
+                <code className="rounded bg-white/80 px-1">PLACES_DISCOVER_DEFAULT_QUERY</code>, and the same admin access as other dev tools.
+              </p>
+              <p className="mt-2 text-[11px] leading-snug text-slate-800">
+                <strong className="text-brand-ink/90">No Places key?</strong> Use <strong>CSV import</strong>, <strong>Add lead</strong>, or{" "}
+                <strong>Enrich</strong> on a row (OpenStreetMap / Nominatim geocode — free with a proper{" "}
+                <code className="rounded bg-white/70 px-1">NOMINATIM_USER_AGENT</code>). Inline web results in Verify can use Google Custom Search (
+                <code className="rounded bg-white/70 px-1">GOOGLE_CSE_*</code>, 100 queries/day free tier) if you add keys; otherwise use browser search there.
+              </p>
+              <button
+                type="button"
+                disabled={placesDiscoverBusy}
+                className="mt-3 rounded-md bg-brand px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-dark disabled:opacity-50"
+                onClick={() => {
+                  setPlacesDiscoverBusy(true);
+                  void vm
+                    .placesDiscoverLeads({ limit: 5 })
+                    .then((r) => {
+                      if (!r.ok) {
+                        window.alert(r.error ?? "Places discover failed.");
+                        return;
+                      }
+                      window.alert(
+                        `Created ${r.created ?? 0} lead(s), skipped ${r.skipped ?? 0}. Query: ${r.queryUsed ?? "—"}\n\n${(r.pricingNote ?? "").slice(0, 280)}${(r.pricingNote?.length ?? 0) > 280 ? "…" : ""}`
+                      );
+                    })
+                    .finally(() => setPlacesDiscoverBusy(false));
+                }}
+              >
+                {placesDiscoverBusy ? "Discovering…" : "Run Places discover (up to 5)"}
+              </button>
+            </section>
+            </>
           )}
 
           {activeView === "dashboard" && (
             <section className="card">
-              <div className="mb-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                <p className="font-semibold text-brand-ink/90">
-                  Address quality · verified {vm.addressMetrics.verified} · 71+ {vm.addressMetrics.good} · needs review (&lt;71){" "}
-                  {vm.addressMetrics.low} · very poor (≤10) {vm.addressMetrics.veryPoor}
-                </p>
-                <p className="mt-1" title={ADDRESS_CONFIDENCE_TOOLTIP}>
-                  First-touch location lines only when addr ≥ 86 or CRM/enrichment location trust is high.
-                </p>
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                <label className="min-w-0 flex-1 text-[11px] text-slate-600">
+                  <span className="font-semibold text-brand-ink/90">Ask Gloria (Claude)</span>
+                  <input
+                    type="text"
+                    value={assistantLine}
+                    onChange={(e) => setAssistantLine(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void runDashboardAssistant();
+                      }
+                    }}
+                    disabled={assistantBusy}
+                    placeholder="Ask about this dashboard, or paste a designer/builder website URL to pull a contact into leads (Verify pending)"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-brand-ink placeholder:text-slate-400 disabled:opacity-60"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={assistantBusy || !assistantLine.trim()}
+                  onClick={() => void runDashboardAssistant()}
+                  className="shrink-0 self-end rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-brand-ink hover:bg-brand-dark disabled:opacity-50 sm:self-auto"
+                >
+                  {assistantBusy ? "…" : "Ask"}
+                </button>
               </div>
+              {assistantReply ? (
+                <p className="mb-4 whitespace-pre-wrap rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-xs text-brand-ink/90">
+                  {assistantReply}
+                </p>
+              ) : null}
+              <p className="mb-4 text-[10px] text-slate-500">
+                Needs <code className="rounded bg-slate-100 px-1">ANTHROPIC_API_KEY</code>. URL-only lines fetch the page server-side (many sites block bots); if import
+                fails, try Add lead manually. Production also needs matching <code className="rounded bg-slate-100 px-1">ADMIN_API_KEY</code> /{" "}
+                <code className="rounded bg-slate-100 px-1">NEXT_PUBLIC_ADMIN_API_KEY</code>.
+              </p>
 
               <div className="mt-3 flex flex-wrap gap-2 border-b border-slate-100 pb-3">
                 <button
@@ -1997,6 +2108,24 @@ export function DashboardApp({
                     className={`rounded-full px-1.5 py-0 text-[11px] ${dashboardTab === "active" ? "bg-brand-ink/15 text-brand-ink" : "bg-stone-200/80 text-brand-ink/70"}`}
                   >
                     {dashboardActiveLeads.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardTab("in_campaign")}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    dashboardTab === "in_campaign"
+                      ? "bg-brand text-brand-ink shadow"
+                      : "border border-stone-200 bg-white text-brand-ink/75 hover:bg-brand/10"
+                  }`}
+                >
+                  In campaign
+                  <span
+                    className={`rounded-full px-1.5 py-0 text-[11px] ${
+                      dashboardTab === "in_campaign" ? "bg-brand-ink/15 text-brand-ink" : "bg-stone-200/80 text-brand-ink/70"
+                    }`}
+                  >
+                    {dashboardInCampaignLeads.length}
                   </span>
                 </button>
                 <button
@@ -2024,7 +2153,9 @@ export function DashboardApp({
                       <th className="p-2">Status</th>
                       <th className="p-2">Last reply</th>
                       <th className="p-2">Meeting</th>
-                      {dashboardTab === "active" ? <th className="whitespace-nowrap p-2">Actions</th> : null}
+                      {dashboardTab === "active" || dashboardTab === "in_campaign" ? (
+                        <th className="whitespace-nowrap p-2">Actions</th>
+                      ) : null}
                       <th className="p-2">Score</th>
                       <th className="p-2">Tier</th>
                       <th className="p-2">Distance</th>
@@ -2076,7 +2207,7 @@ export function DashboardApp({
                             <span className="font-medium text-brand-ink/90">{mtg.label}</span>
                             {mtg.detail ? <span className="mt-0.5 block text-[11px] text-slate-600">{mtg.detail}</span> : null}
                           </td>
-                          {dashboardTab === "active" ? (
+                          {dashboardTab === "active" || dashboardTab === "in_campaign" ? (
                             <td className="p-2 align-middle" onClick={(e) => e.stopPropagation()}>
                               <button
                                 type="button"
@@ -2099,7 +2230,9 @@ export function DashboardApp({
                   <p className="p-6 text-center text-sm text-slate-500">
                     {dashboardTab === "active"
                       ? "No active replies right now. Replies show here until you retire them to lost."
-                      : "No lost leads yet. Use Retire to lost on an active lead to archive them here."}
+                      : dashboardTab === "in_campaign"
+                        ? "No leads with status In Campaign. Launch a campaign from the Leads tab to move recipients here."
+                        : "No lost leads yet. Use Retire to lost on an active lead to archive them here."}
                   </p>
                 )}
               </div>
