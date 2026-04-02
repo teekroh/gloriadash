@@ -16,6 +16,11 @@ function outreachTestInboxConfigured() {
   return Boolean(outreachConfig.testToEmail);
 }
 
+/** Preview deploys are for testing; allow dashboard live toggle without changing production env rules. */
+function isVercelPreview() {
+  return process.env.VERCEL_ENV === "preview";
+}
+
 export async function POST(request: Request) {
   const authErr = requireAdminApiKey(request);
   if (authErr) return authErr;
@@ -35,13 +40,14 @@ export async function POST(request: Request) {
 
   if (mode === "live") {
     const canLiveFromDashboard =
-      allowDashboardLiveWhenEnvDry() || outreachTestInboxConfigured();
+      allowDashboardLiveWhenEnvDry() || outreachTestInboxConfigured() || isVercelPreview();
     if (isProduction() && outreachDryRunFromEnv() && !canLiveFromDashboard) {
       return NextResponse.json(
         {
           ok: false,
+          code: "dry_run_guard",
           error:
-            "Production safety: .env has DRY_RUN on. To turn off dry run from the dashboard, set OUTREACH_TEST_TO to your inbox (all outreach Resend To: is redirected there), or set ALLOW_DASHBOARD_LIVE_SEND=true, or set DRY_RUN=false in the host environment."
+            "DRY_RUN is enabled in the environment (default is on) and this deployment is not a Vercel preview. Add an escape hatch in the host env, then redeploy."
         },
         { status: 403 }
       );

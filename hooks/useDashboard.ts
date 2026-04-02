@@ -492,10 +492,19 @@ export const useDashboard = (
       },
       body: JSON.stringify(body)
     });
-    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      code?: string;
+    };
     setDryRunToggleBusy(false);
     await refresh();
-    return { ok: res.ok && data.ok !== false, error: data.error, status: res.status };
+    return {
+      ok: res.ok && data.ok !== false,
+      error: data.error,
+      code: data.code,
+      status: res.status
+    };
   };
 
   const createLead = async (payload: CreateManualLeadPayload) => {
