@@ -62,9 +62,24 @@ function clip(s: string, n: number) {
   return `${s.slice(0, n)}…`;
 }
 
+function bookingRecordSortRank(b: Lead["bookingHistory"][number]): number {
+  if (b.status === "booked" && (b.meetingStatus ?? "").toLowerCase() === "confirmed") return 3;
+  if (b.status === "booked") return 2;
+  if (b.status === "booking_sent") return 1;
+  return 0;
+}
+
+/** Prefer a confirmed Cal booking over an older “invite sent” row so the dashboard matches reality. */
 function latestBookingRecord(lead: Lead | null | undefined) {
   if (!lead?.bookingHistory?.length) return null;
-  return [...lead.bookingHistory].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0];
+  return [...lead.bookingHistory].sort((a, b) => {
+    const dr = bookingRecordSortRank(b) - bookingRecordSortRank(a);
+    if (dr !== 0) return dr;
+    const bt = new Date(b.bookedAt ?? b.at).getTime();
+    const at = new Date(a.bookedAt ?? a.at).getTime();
+    if (bt !== at) return bt - at;
+    return new Date(b.at).getTime() - new Date(a.at).getTime();
+  })[0];
 }
 
 /** Best-effort timestamp of the latest campaign reply. */
@@ -772,6 +787,7 @@ export function DashboardApp({
   const [isCalWebhookTesting, setIsCalWebhookTesting] = useState(false);
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [addLeadBusy, setAddLeadBusy] = useState(false);
+  const [placesDiscoverBusy, setPlacesDiscoverBusy] = useState(false);
   const [addLeadForm, setAddLeadForm] = useState({
     firstName: "",
     lastName: "",
@@ -1207,6 +1223,54 @@ export function DashboardApp({
                 File: <strong>resources/{importSummary.sourceFile}</strong> · Total rows: {importSummary.totalRows} | Valid rows:{" "}
                 {importSummary.validRows} | Skipped: {importSummary.skippedRows} | Duplicates: {importSummary.duplicateRows}
               </p>
+            </section>
+          )}
+
+          {activeView === "leads" && (
+            <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-xs text-amber-950">
+              <p className="font-semibold text-brand-ink/90">Web discovery (Google Places)</p>
+              <p className="mt-1 text-[11px] leading-snug opacity-95">
+                Creates up to <strong>5</strong> leads per run (<strong>Scraped / External</strong>) via Places Text Search —{" "}
+                <strong>billed</strong> on your Google Cloud / Maps account (
+                <a
+                  className="font-medium text-brand-ink underline"
+                  href="https://developers.google.com/maps/documentation/places/web-service/usage-and-billing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  usage and billing
+                </a>
+                ). Needs <code className="rounded bg-white/80 px-1">GOOGLE_PLACES_API_KEY</code>, optional{" "}
+                <code className="rounded bg-white/80 px-1">PLACES_DISCOVER_DEFAULT_QUERY</code>, and the same admin access as other dev tools.
+              </p>
+              <p className="mt-2 text-[11px] leading-snug text-slate-800">
+                <strong className="text-brand-ink/90">No Places key?</strong> Use <strong>CSV import</strong>, <strong>Add lead</strong>, or{" "}
+                <strong>Enrich</strong> on a row (OpenStreetMap / Nominatim geocode — free with a proper{" "}
+                <code className="rounded bg-white/70 px-1">NOMINATIM_USER_AGENT</code>). Inline web results in Verify can use Google Custom Search (
+                <code className="rounded bg-white/70 px-1">GOOGLE_CSE_*</code>, 100 queries/day free tier) if you add keys; otherwise use browser search there.
+              </p>
+              <button
+                type="button"
+                disabled={placesDiscoverBusy}
+                className="mt-3 rounded-md bg-brand px-3 py-2 text-xs font-semibold text-brand-ink hover:bg-brand-dark disabled:opacity-50"
+                onClick={() => {
+                  setPlacesDiscoverBusy(true);
+                  void vm
+                    .placesDiscoverLeads({ limit: 5 })
+                    .then((r) => {
+                      if (!r.ok) {
+                        window.alert(r.error ?? "Places discover failed.");
+                        return;
+                      }
+                      window.alert(
+                        `Created ${r.created ?? 0} lead(s), skipped ${r.skipped ?? 0}. Query: ${r.queryUsed ?? "—"}\n\n${(r.pricingNote ?? "").slice(0, 280)}${(r.pricingNote?.length ?? 0) > 280 ? "…" : ""}`
+                      );
+                    })
+                    .finally(() => setPlacesDiscoverBusy(false));
+                }}
+              >
+                {placesDiscoverBusy ? "Discovering…" : "Run Places discover (up to 5)"}
+              </button>
             </section>
           )}
 
@@ -2041,7 +2105,15 @@ export function DashboardApp({
                           <SourceBadge source={t.source as Lead["source"]} />
                           <StatusBadge status={t.status as Lead["status"]} />
                         </div>
-                        <p className="mt-1.5 line-clamp-2 text-[10px] text-slate-600">{clip(t.inboundBody, 120)}</p>
+                        <p
+                          className="mt-1.5 line-clamp-2 text-[10px] text-slate-600"
+                          title="Last outbound email (not their reply)"
+                        >
+                          {clip(
+                            t.lastOutboundBody && t.lastOutboundBody !== "—" ? t.lastOutboundBody : t.inboundBody,
+                            120
+                          )}
+                        </p>
                       </button>
                     );
                   })}
@@ -2115,12 +2187,7 @@ export function DashboardApp({
               </div>
             </section>
           )}
-          {activeView === "verify" && (
-            <VerifyWorkbench
-              onRefresh={() => void vm.refresh()}
-              onDiscoverPlaces={() => vm.placesDiscoverLeads({ limit: 5 })}
-            />
-          )}
+          {activeView === "verify" && <VerifyWorkbench onRefresh={() => void vm.refresh()} />}
           {activeView === "simulation" && (
             <section className="space-y-4">
               <div className="card">

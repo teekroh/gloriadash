@@ -13,6 +13,18 @@ function normEmail(s: string): string {
   return s.trim().toLowerCase();
 }
 
+/** Cal.com `responses.email` is often `{ label, value, isHidden }`, not a raw string. */
+function emailFromCalResponses(responses: Json | undefined): string | null {
+  if (!responses || typeof responses !== "object") return null;
+  const e = responses.email;
+  if (typeof e === "string" && e.trim()) return normEmail(e);
+  if (e && typeof e === "object" && "value" in e) {
+    const v = (e as { value?: unknown }).value;
+    if (typeof v === "string" && v.trim()) return normEmail(v);
+  }
+  return null;
+}
+
 /**
  * Process Cal.com (or mock) booking webhook payload.
  * Resolves lead by explicit leadId, then attendee email.
@@ -26,6 +38,7 @@ export async function processCalBookingPayload(body: unknown): Promise<{
 }> {
   const root = asObj(body) ?? {};
   const isMock = root.mock === true;
+  const triggerRaw = typeof root.triggerEvent === "string" ? root.triggerEvent.trim() : "";
 
   const eventType = detectCalBookingEventType(body) ?? (isMock ? "booking.created" : undefined);
 
@@ -85,11 +98,19 @@ export async function processCalBookingPayload(body: unknown): Promise<{
 
     const responses = bookingFromPayload.responses as Json | undefined;
     const attendees = bookingFromPayload.attendees as unknown;
-    if (Array.isArray(attendees) && attendees[0] && typeof attendees[0] === "object") {
-      const a = attendees[0] as Json;
-      attendeeEmail = (a.email as string) || null;
+    if (Array.isArray(attendees)) {
+      for (const row of attendees) {
+        if (row && typeof row === "object") {
+          const a = row as Json;
+          const em = (a.email as string) || null;
+          if (em?.trim()) {
+            attendeeEmail = normEmail(em);
+            break;
+          }
+        }
+      }
     }
-    if (!attendeeEmail && responses?.email) attendeeEmail = String(responses.email);
+    if (!attendeeEmail) attendeeEmail = emailFromCalResponses(responses);
   }
 
   if (!leadId && attendeeEmail) {
@@ -116,8 +137,9 @@ export async function processCalBookingPayload(body: unknown): Promise<{
     campaignId = cl?.campaignId ?? undefined;
   }
 
-  // Event handlers.
-  if (eventType === "booking.created" || !eventType) {
+  // Event handlers. Modern Cal payloads always set `triggerEvent`; do not treat unknown triggers as "created"
+  // (would mis-handle BOOKING_CANCELLED etc. if detection failed).
+  if (eventType === "booking.created" || (!eventType && !triggerRaw && (isMock || rootHasLegacyFields))) {
     const result = await markBooked(leadId, {
       externalBookingId,
       meetingStart,
@@ -248,6 +270,12 @@ export async function processCalBookingPayload(body: unknown): Promise<{
  */
 export function detectCalBookingEventType(body: unknown): string | undefined {
   const root = asObj(body) ?? {};
+  const te =
+    typeof root.triggerEvent === "string" ? root.triggerEvent.trim().toUpperCase().replace(/\./g, "_") : "";
+  if (te === "BOOKING_CREATED") return "booking.created";
+  if (te === "BOOKING_RESCHEDULED") return "booking.rescheduled";
+  if (te === "BOOKING_CANCELLED") return "booking.cancelled";
+
   const direct =
     root.event && typeof root.event === "string"
       ? root.event

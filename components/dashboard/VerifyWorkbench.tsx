@@ -47,17 +47,7 @@ function buildReviewQuery(lead: Lead): string {
   return parts.join(" ");
 }
 
-export function VerifyWorkbench({
-  onRefresh,
-  onDiscoverPlaces
-}: {
-  onRefresh: () => Promise<void> | void;
-  /** Optional: run POST /api/dev/places-discover (admin key + GOOGLE_PLACES_API_KEY). */
-  onDiscoverPlaces?: () => Promise<
-    | { ok: true; created?: number; skipped?: number; pricingNote?: string; queryUsed?: string }
-    | { ok: false; error?: string }
-  >;
-}) {
+export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> | void }) {
   const [queue, setQueue] = useState<Lead[]>([]);
   const [stats, setStats] = useState<QueueResponse["stats"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,7 +55,6 @@ export function VerifyWorkbench({
   const [slide, setSlide] = useState<"in" | "out">("in");
   const [searchPayload, setSearchPayload] = useState<SearchResponse | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [discoverBusy, setDiscoverBusy] = useState(false);
   const [optionalVerifyEmail, setOptionalVerifyEmail] = useState("");
   const [optionalVerifyAddress, setOptionalVerifyAddress] = useState("");
 
@@ -223,39 +212,6 @@ export function VerifyWorkbench({
               </p>
             ) : null}
           </>
-        ) : null}
-        {onDiscoverPlaces ? (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
-            <p className="font-medium">Google Places discovery (~5/day)</p>
-            <p className="mt-1 text-[11px] opacity-95">
-              Uses <strong>GOOGLE_PLACES_API_KEY</strong> (paid Maps Platform usage per Text Search request). New leads use{" "}
-              <strong>Scraped / External</strong> and appear at the top of this queue. Optional env{" "}
-              <code className="rounded bg-white/80 px-1">PLACES_DISCOVER_DEFAULT_QUERY</code> for the search phrase.
-            </p>
-            <button
-              type="button"
-              disabled={discoverBusy}
-              className="mt-2 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-brand-ink hover:bg-brand-dark disabled:opacity-50"
-              onClick={() => {
-                setDiscoverBusy(true);
-                void onDiscoverPlaces()
-                  .then((r) => {
-                    if (!r.ok) {
-                      window.alert(r.error ?? "Places discover failed.");
-                      return;
-                    }
-                    window.alert(
-                      `Created ${r.created ?? 0} lead(s), skipped ${r.skipped ?? 0}. Query: ${r.queryUsed ?? "—"}\n\n${(r.pricingNote ?? "").slice(0, 280)}${(r.pricingNote?.length ?? 0) > 280 ? "…" : ""}`
-                    );
-                    void loadQueue();
-                    void onRefresh();
-                  })
-                  .finally(() => setDiscoverBusy(false));
-              }}
-            >
-              {discoverBusy ? "Discovering…" : "Run Places discover (up to 5)"}
-            </button>
-          </div>
         ) : null}
       </header>
 

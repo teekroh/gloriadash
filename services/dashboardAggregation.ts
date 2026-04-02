@@ -269,7 +269,13 @@ export function aggregateDashboard(
     const irs = byLeadInbound.get(l.id) ?? [];
     const latest = irs[0];
     if (!latest) continue;
-    const outs = messages.filter((m) => m.leadId === l.id && m.direction === "outbound");
+    const outs = messages.filter(
+      (m) =>
+        m.leadId === l.id &&
+        m.direction === "outbound" &&
+        m.kind !== "system_auto" &&
+        m.status !== "scheduled"
+    );
     const lastOut = outs.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())[0];
     threads.push({
       leadId: l.id,
