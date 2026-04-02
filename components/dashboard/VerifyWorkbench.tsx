@@ -1,59 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import type { Lead, LeadType } from "@/types/lead";
+import type { Lead } from "@/types/lead";
+import {
+  buildSearchQueryFromProfileDraft,
+  leadToProfileDraft,
+  profileDraftToApiPayload,
+  type LeadProfileDraft
+} from "@/lib/leadProfileDraft";
 import { compareVerifyQueue } from "@/services/scoringService";
 import {
   ADDRESS_CONFIDENCE_TOOLTIP,
   AddressConfidenceBadge
 } from "@/components/ui/AddressConfidenceBadge";
 import { SourceBadge } from "@/components/ui/SourceBadge";
-
-const VERIFY_LEAD_TYPES: LeadType[] = [
-  "designer",
-  "architect",
-  "builder",
-  "cabinet shop",
-  "commercial builder",
-  "homeowner"
-];
-
-type VerifyProfileDraft = {
-  fullName: string;
-  company: string;
-  email: string;
-  phone: string;
-  websiteUri: string;
-  city: string;
-  state: string;
-  zip: string;
-  leadType: LeadType;
-  notes: string;
-};
-
-function leadToDraft(l: Lead): VerifyProfileDraft {
-  return {
-    fullName: l.fullName ?? "",
-    company: l.company ?? "",
-    email: l.email ?? "",
-    phone: l.phone ?? "",
-    websiteUri: l.websiteUri ?? "",
-    city: l.city ?? "",
-    state: l.state ?? "",
-    zip: l.zip ?? "",
-    leadType: VERIFY_LEAD_TYPES.includes(l.leadType) ? l.leadType : "homeowner",
-    notes: l.notes ?? ""
-  };
-}
-
-function buildReviewQueryFromDraft(d: VerifyProfileDraft): string {
-  const parts = [
-    `"${d.fullName.trim()}"`,
-    d.company?.trim() || undefined,
-    [d.city, d.state, d.zip].filter(Boolean).join(" ")
-  ].filter(Boolean);
-  return parts.join(" ");
-}
+import { LeadProfileForm } from "@/components/dashboard/LeadProfileForm";
 
 type QueueResponse = {
   leads: Lead[];
@@ -84,10 +45,6 @@ type SearchResponse =
       items: { title: string; link: string; snippet: string }[];
     };
 
-const fieldInput =
-  "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-brand-ink placeholder:text-slate-400";
-const fieldLabel = "block text-xs text-slate-600";
-
 export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> | void }) {
   const [queue, setQueue] = useState<Lead[]>([]);
   const [stats, setStats] = useState<QueueResponse["stats"] | null>(null);
@@ -96,7 +53,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
   const [slide, setSlide] = useState<"in" | "out">("in");
   const [searchPayload, setSearchPayload] = useState<SearchResponse | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [editProfile, setEditProfile] = useState<VerifyProfileDraft | null>(null);
+  const [editProfile, setEditProfile] = useState<LeadProfileDraft | null>(null);
 
   const loadQueue = useCallback(async () => {
     setLoading(true);
@@ -124,14 +81,14 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
       setEditProfile(null);
       return;
     }
-    setEditProfile(leadToDraft(lead));
+    setEditProfile(leadToProfileDraft(lead));
     // Only re-seed when the carousel advances to a different lead (not on every queue ref).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queue[0]?.id
   }, [queue[0]?.id]);
 
   const searchQueryString = useMemo(() => {
     if (!editProfile) return "";
-    return buildReviewQueryFromDraft(editProfile);
+    return buildSearchQueryFromProfileDraft(editProfile);
   }, [editProfile]);
 
   useEffect(() => {
@@ -191,23 +148,10 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
     setSlide("out");
     await new Promise((r) => setTimeout(r, 180));
     try {
-      const profile = {
-        fullName: editProfile.fullName,
-        company: editProfile.company,
-        email: editProfile.email,
-        phone: editProfile.phone,
-        websiteUri: editProfile.websiteUri,
-        city: editProfile.city,
-        state: editProfile.state,
-        zip: editProfile.zip,
-        leadType: editProfile.leadType,
-        notes: editProfile.notes
-      };
-
       const res = await fetch(`/api/leads/${current.id}/verify-decision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verdict, profile })
+        body: JSON.stringify({ verdict, profile: profileDraftToApiPayload(editProfile) })
       });
       if (res.status === 409) {
         window.alert("That email is already used by another lead.");
@@ -306,119 +250,12 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
           >
             <article className="rounded-xl border-2 border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lead profile</p>
-              <p className="mt-1 text-[11px] text-slate-500">Edits below are written when you click Ready or Reject (not Unknown).</p>
-
-              <div className="mt-4 space-y-3">
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Full name</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    value={editProfile.fullName}
-                    onChange={(e) => setEditProfile((p) => (p ? { ...p, fullName: e.target.value } : p))}
-                    className={fieldInput}
-                  />
-                </label>
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Company</span>
-                  <input
-                    type="text"
-                    autoComplete="organization"
-                    value={editProfile.company}
-                    onChange={(e) => setEditProfile((p) => (p ? { ...p, company: e.target.value } : p))}
-                    className={fieldInput}
-                  />
-                </label>
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Email</span>
-                  <input
-                    type="email"
-                    autoComplete="off"
-                    value={editProfile.email}
-                    onChange={(e) => setEditProfile((p) => (p ? { ...p, email: e.target.value } : p))}
-                    className={fieldInput}
-                    placeholder="name@example.com"
-                  />
-                </label>
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Phone</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    value={editProfile.phone}
-                    onChange={(e) => setEditProfile((p) => (p ? { ...p, phone: e.target.value } : p))}
-                    className={fieldInput}
-                  />
-                </label>
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Website</span>
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    value={editProfile.websiteUri}
-                    onChange={(e) => setEditProfile((p) => (p ? { ...p, websiteUri: e.target.value } : p))}
-                    className={fieldInput}
-                    placeholder="https:// or domain.com"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <label className={fieldLabel}>
-                    <span className="font-medium text-brand-ink">City</span>
-                    <input
-                      type="text"
-                      autoComplete="address-level2"
-                      value={editProfile.city}
-                      onChange={(e) => setEditProfile((p) => (p ? { ...p, city: e.target.value } : p))}
-                      className={fieldInput}
-                    />
-                  </label>
-                  <label className={fieldLabel}>
-                    <span className="font-medium text-brand-ink">State</span>
-                    <input
-                      type="text"
-                      autoComplete="address-level1"
-                      value={editProfile.state}
-                      onChange={(e) => setEditProfile((p) => (p ? { ...p, state: e.target.value } : p))}
-                      className={fieldInput}
-                    />
-                  </label>
-                  <label className={`${fieldLabel} col-span-2 sm:col-span-1`}>
-                    <span className="font-medium text-brand-ink">ZIP</span>
-                    <input
-                      type="text"
-                      autoComplete="postal-code"
-                      value={editProfile.zip}
-                      onChange={(e) => setEditProfile((p) => (p ? { ...p, zip: e.target.value } : p))}
-                      className={fieldInput}
-                    />
-                  </label>
-                </div>
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Lead type</span>
-                  <select
-                    value={editProfile.leadType}
-                    onChange={(e) =>
-                      setEditProfile((p) => (p ? { ...p, leadType: e.target.value as LeadType } : p))
-                    }
-                    className={fieldInput}
-                  >
-                    {VERIFY_LEAD_TYPES.map((lt) => (
-                      <option key={lt} value={lt}>
-                        {lt}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className={fieldLabel}>
-                  <span className="font-medium text-brand-ink">Notes</span>
-                  <textarea
-                    rows={3}
-                    value={editProfile.notes}
-                    onChange={(e) => setEditProfile((p) => (p ? { ...p, notes: e.target.value } : p))}
-                    className={`${fieldInput} resize-y`}
-                    placeholder="Internal notes"
-                  />
-                </label>
+              <div className="mt-4">
+                <LeadProfileForm
+                  value={editProfile}
+                  onChange={setEditProfile}
+                  hint="Edits below are written when you click Ready or Reject (not Unknown)."
+                />
               </div>
 
               <div className="mt-6 space-y-2 border-t border-slate-100 pt-4 text-sm">

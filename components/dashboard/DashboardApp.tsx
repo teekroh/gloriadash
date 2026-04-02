@@ -28,6 +28,8 @@ import { SimulationPanel } from "@/components/dashboard/SimulationPanel";
 import { VoiceTrainTab } from "@/components/dashboard/VoiceTrainTab";
 import type { VoiceTrainingNoteDTO } from "@/services/voiceTrainingStorage";
 import { VerifyWorkbench } from "@/components/dashboard/VerifyWorkbench";
+import { LeadProfileForm } from "@/components/dashboard/LeadProfileForm";
+import { leadToProfileDraft, profileDraftToApiPayload, type LeadProfileDraft } from "@/lib/leadProfileDraft";
 import { compareLeadsForLibrary } from "@/services/scoringService";
 import { AutomationAuditBadges } from "@/components/ui/HandlingBadge";
 import { SourceBadge } from "@/components/ui/SourceBadge";
@@ -800,6 +802,9 @@ export function DashboardApp({
   const [isCalWebhookTesting, setIsCalWebhookTesting] = useState(false);
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [addLeadBusy, setAddLeadBusy] = useState(false);
+  const [libraryEditLeadId, setLibraryEditLeadId] = useState<string | null>(null);
+  const [libraryEditDraft, setLibraryEditDraft] = useState<LeadProfileDraft | null>(null);
+  const [libraryEditBusy, setLibraryEditBusy] = useState(false);
   const [placesDiscoverBusy, setPlacesDiscoverBusy] = useState(false);
   const [addLeadForm, setAddLeadForm] = useState({
     firstName: "",
@@ -1497,8 +1502,9 @@ export function DashboardApp({
                     <div>
                       <h2 className="text-lg font-semibold text-brand-ink">Lead library</h2>
                       <p className="mt-0.5 text-xs text-slate-600">
-                        <strong>Verify-approved</strong> leads first, then <strong>score</strong> (homeowners below trade types; designer → builder → architect). Filter, multi-select with checkboxes, preview first-touch
-                        copy, and launch campaigns to the selected audience.
+                        <strong>Verify-approved</strong> leads first, then <strong>score</strong> (homeowners below trade types; designer → builder → architect).{" "}
+                        <strong>Click a row</strong> to edit the same fields as Verify (saved on Save — Verify status unchanged). Filter, multi-select with checkboxes, preview
+                        first-touch copy, and launch campaigns to the selected audience.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1623,8 +1629,25 @@ export function DashboardApp({
                     </thead>
                     <tbody>
                       {vm.filtered.map((lead) => (
-                        <tr key={lead.id} className="border-t hover:bg-slate-50">
-                          <td className="p-2"><input type="checkbox" checked={vm.selectedIds.includes(lead.id)} onChange={(e) => vm.setSelectedIds((ids) => e.target.checked ? [...ids, lead.id] : ids.filter((id) => id !== lead.id))} /></td>
+                        <tr
+                          key={lead.id}
+                          className="cursor-pointer border-t hover:bg-slate-50"
+                          onClick={() => {
+                            setLibraryEditLeadId(lead.id);
+                            setLibraryEditDraft(leadToProfileDraft(lead));
+                          }}
+                        >
+                          <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={vm.selectedIds.includes(lead.id)}
+                              onChange={(e) =>
+                                vm.setSelectedIds((ids) =>
+                                  e.target.checked ? [...ids, lead.id] : ids.filter((id) => id !== lead.id)
+                                )
+                              }
+                            />
+                          </td>
                           <td className="p-2">
                             <p className="flex items-center gap-1.5 font-medium text-brand-ink">
                               {lead.deployVerifyVerdict === "approved" ? (
@@ -1678,6 +1701,99 @@ export function DashboardApp({
                     </tbody>
                   </table>
                 </div>
+
+                {libraryEditLeadId && libraryEditDraft ? (
+                  <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="library-edit-lead-title"
+                    onClick={() => {
+                      if (!libraryEditBusy) {
+                        setLibraryEditLeadId(null);
+                        setLibraryEditDraft(null);
+                      }
+                    }}
+                  >
+                    <div
+                      className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h3 id="library-edit-lead-title" className="text-lg font-semibold text-brand-ink">
+                        Edit lead
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Same fields as the Verify tab. Fit score recomputes from lead type and email. Green Verify ✓ (if any) is{" "}
+                        <strong>not</strong> changed here — use Verify to approve or reject.
+                      </p>
+                      <div className="mt-4">
+                        <LeadProfileForm value={libraryEditDraft} onChange={setLibraryEditDraft} />
+                      </div>
+                      <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+                        <button
+                          type="button"
+                          disabled={libraryEditBusy}
+                          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-brand-ink/90 hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() => {
+                            if (!libraryEditBusy) {
+                              setLibraryEditLeadId(null);
+                              setLibraryEditDraft(null);
+                            }
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={libraryEditBusy}
+                          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-ink hover:bg-brand-dark disabled:opacity-50"
+                          onClick={async () => {
+                            if (!libraryEditLeadId) return;
+                            setLibraryEditBusy(true);
+                            try {
+                              const res = await fetch(`/api/leads/${libraryEditLeadId}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ profile: profileDraftToApiPayload(libraryEditDraft) })
+                              });
+                              if (res.status === 409) {
+                                window.alert("That email is already used by another lead.");
+                                return;
+                              }
+                              if (res.status === 400) {
+                                const err = (await res.json().catch(() => ({}))) as { error?: string };
+                                const code = err.error;
+                                window.alert(
+                                  code === "invalid_email"
+                                    ? "Enter a valid email or leave it empty."
+                                    : code === "full_name_required"
+                                      ? "Enter a name (at least a first name)."
+                                      : code === "invalid_lead_type"
+                                        ? "Invalid lead type."
+                                        : code === "profile_required"
+                                          ? "Invalid save request."
+                                          : "Could not save lead."
+                                );
+                                return;
+                              }
+                              if (!res.ok) {
+                                window.alert("Could not save lead.");
+                                return;
+                              }
+                              setLibraryEditLeadId(null);
+                              setLibraryEditDraft(null);
+                              await vm.refresh();
+                            } finally {
+                              setLibraryEditBusy(false);
+                            }
+                          }}
+                        >
+                          {libraryEditBusy ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 {singleSelectedLead ? (
                   <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-brand-ink/90">
