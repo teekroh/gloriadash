@@ -1022,9 +1022,8 @@ export function DashboardApp({
       <div className="grid min-h-screen grid-cols-[250px_1fr]">
         <aside className="flex min-h-screen flex-col border-r border-white/10 bg-brand-ink p-4 text-stone-100">
           <div className="mb-6 flex items-center justify-center gap-2 px-1">
-            <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-stone-400">Leads</span>
             <img src="/gloria-logo.svg" alt="" className="h-11 w-auto shrink-0 max-w-[100px] opacity-95" aria-hidden />
-            <span className="font-semibold tracking-tight text-xl text-stone-100">Gloria</span>
+            <span className="font-semibold tracking-tight text-xl text-stone-100">Gloria Leads</span>
           </div>
           <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto text-sm">
             {SIDEBAR_VIEWS.map((v) => (

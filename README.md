@@ -1,6 +1,6 @@
-# Gloria Custom Cabinetry - v2 MVP
+# Gloria Leads (Gloria Custom Cabinetry)
 
-Next.js + TypeScript + Tailwind dashboard for:
+Next.js + TypeScript + Tailwind app for:
 
 - CSV-driven lead ingestion and qualification
 - source-transparent lead management
@@ -29,7 +29,7 @@ Open `http://127.0.0.1:3000` (or `http://localhost:3000`). After a WiFi change, 
 - `services/scoringService.ts` - strategic scoring and priority tiers
 - `services/replyClassifier.ts` - reply categories and automation actions
 - `services/messagingService.ts` - first-touch + follow-up template library
-- `components/dashboard/DashboardApp.tsx` - dashboard layout and all MVP views
+- `components/dashboard/DashboardApp.tsx` - Gloria Leads layout and all MVP views
 
 ## Source Transparency
 
