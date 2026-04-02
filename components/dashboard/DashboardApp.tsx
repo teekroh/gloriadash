@@ -2172,6 +2172,14 @@ export function DashboardApp({
                   ) : null}
                 </div>
                 <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+                  <a
+                    href={vm.bookingLinkDisplay || appConfig.bookingLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-brand-ink shadow-sm transition hover:border-brand/40"
+                  >
+                    Add booking
+                  </a>
                   <button
                     type="button"
                     disabled={gcalSyncBusy}
