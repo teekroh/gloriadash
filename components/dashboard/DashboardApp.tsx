@@ -2006,6 +2006,17 @@ export function DashboardApp({
                       : "LIVE SEND"}
                 </div>
               </div>
+              {vm.outreachTestToActive && !vm.outreachDryRun ? (
+                <div className="mt-3 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  <p className="font-semibold">Test recipient mode is on</p>
+                  <p className="mt-1">
+                    <code className="rounded bg-white/90 px-1">OUTREACH_TEST_TO</code> redirects every Resend “To” to that address — leads never see mail at their own email.
+                    To go <strong>live to each lead</strong>: open Vercel → Project → Settings → Environment Variables →{" "}
+                    <strong>remove</strong> <code className="rounded bg-white/90 px-1">OUTREACH_TEST_TO</code> (or clear its value) → save →{" "}
+                    <strong>Redeploy</strong>. Keep <code className="rounded bg-white/90 px-1">DRY_RUN=false</code> and the sidebar <strong>Dry run</strong> unchecked.
+                  </p>
+                </div>
+              ) : null}
               <p className="mt-1 text-xs text-slate-600">Each launch batch with recipient coverage where tracked.</p>
               <ul className="mt-3 divide-y divide-slate-100">
                 {vm.campaigns.map((c) => {

@@ -13,6 +13,17 @@ function normEmail(s: string): string {
   return s.trim().toLowerCase();
 }
 
+/** CRM rows may preserve mixed-case email; Cal guests are usually lowercased — match case-insensitively. */
+async function findLeadIdByEmailLoose(email: string): Promise<string | null> {
+  const raw = email.trim();
+  if (!raw) return null;
+  const lead = await db.lead.findFirst({
+    where: { email: { equals: raw, mode: "insensitive" } },
+    select: { id: true }
+  });
+  return lead?.id ?? null;
+}
+
 /** Cal.com `responses.email` is often `{ label, value, isHidden }`, not a raw string. */
 function emailFromCalResponses(responses: Json | undefined): string | null {
   if (!responses || typeof responses !== "object") return null;
@@ -66,6 +77,8 @@ export async function processCalBookingPayload(body: unknown): Promise<{
   let campaignId: string | undefined =
     root.campaignId !== undefined && root.campaignId !== null ? String(root.campaignId) : undefined;
   let attendeeEmail: string | null = null;
+  /** Guest emails from Cal payload (normalized); used to resolve lead with case-insensitive CRM match. */
+  const calGuestEmails: string[] = [];
 
   const rootHasLegacyFields =
     isMock ||
@@ -125,29 +138,38 @@ export async function processCalBookingPayload(body: unknown): Promise<{
       for (const row of attendees) {
         if (row && typeof row === "object") {
           const a = row as Json;
+          if (a.resource === true) continue;
           const em = (a.email as string) || null;
           if (!em?.trim()) continue;
           const guest = normEmail(em);
           if (organizerEmail && guest === organizerEmail) continue;
-          attendeeEmail = guest;
-          break;
+          calGuestEmails.push(guest);
         }
       }
     }
-    if (!attendeeEmail) attendeeEmail = emailFromCalResponses(responses);
+    const fromResponses = emailFromCalResponses(responses);
+    if (fromResponses && !calGuestEmails.includes(fromResponses)) calGuestEmails.push(fromResponses);
+    attendeeEmail = calGuestEmails[0] ?? fromResponses ?? null;
   }
 
+  if (!leadId && calGuestEmails.length) {
+    for (const em of calGuestEmails) {
+      const id = await findLeadIdByEmailLoose(em);
+      if (id) {
+        leadId = id;
+        break;
+      }
+    }
+  }
   if (!leadId && attendeeEmail) {
-    const lead = await db.lead.findFirst({
-      where: { email: normEmail(attendeeEmail) }
-    });
-    leadId = lead?.id ?? null;
+    leadId = await findLeadIdByEmailLoose(attendeeEmail);
   }
 
   if (!leadId) {
     console.warn("[Cal Booking] could not resolve lead for event", {
       eventType,
       hasAttendeeEmail: Boolean(attendeeEmail),
+      guestEmailCount: calGuestEmails.length,
       externalBookingId: externalBookingId ?? null
     });
     return { ok: false, error: "Could not resolve lead (need leadId or attendee email matching a lead)." };
