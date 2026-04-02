@@ -6,6 +6,9 @@ import { Lead, LeadSource, LeadType, PriorityTier, ProjectTier } from "@/types/l
  * Does **not** use CSV address-confidence %; that field is for outreach/copy QA only.
  * Distance is estimated minutes (e.g. from ZIP), not “how good the street address looks,”
  * so pros who used a home address are not over-penalized on fit score for that reason.
+ *
+ * **Guarantee:** After `spreadAdjustment`, no homeowner score can exceed any designer/builder/architect
+ * (or cabinet / commercial builder): homeowners are capped; trade types have per-type floors.
  */
 export interface ScoreBreakdown {
   emailPresentScore: number;
@@ -13,6 +16,11 @@ export interface ScoreBreakdown {
   distanceScore: number;
   sourceScore: number;
   spendScore: number;
+  /**
+   * Delta applied so homeowners never outrank trade leads: homeowners are capped; designer/builder/architect
+   * (and other trade types) get a floor. Raw component sum is (score - spreadAdjustment) before clamp.
+   */
+  spreadAdjustment: number;
 }
 
 const LEAD_TYPE_ORDER: LeadType[] = [
@@ -39,6 +47,22 @@ const SOURCE_POINTS: Record<LeadSource, number> = {
   Manual: 7,
   "CSV Import": 3
 };
+
+/** No homeowner final score can exceed this; every trade type has a higher floor (guaranteed ordering). */
+const HOMEOWNER_SCORE_CAP = 41;
+
+/** Minimum final score by trade type (after raw sum). Designer/builder/architect always above `HOMEOWNER_SCORE_CAP`. */
+const TRADE_SCORE_FLOOR: Record<Exclude<LeadType, "homeowner">, number> = {
+  designer: 52,
+  builder: 51,
+  architect: 50,
+  "commercial builder": 49,
+  "cabinet shop": 48
+};
+
+function isTradeLeadType(lt: LeadType): lt is Exclude<LeadType, "homeowner"> {
+  return lt !== "homeowner";
+}
 
 /** CSV rows that completed online enrich behave like Online Enriched for scoring (not the raw sheet %). */
 export function resolvedSourceForScore(
@@ -140,18 +164,31 @@ export function scoreLeadBase(input: ScoreLeadBaseInput) {
   const sourceScore = SOURCE_POINTS[src] ?? SOURCE_POINTS["CSV Import"];
   const spendScore = spendPoints(input.amountSpent);
 
+  const rawSum = emailPresentScore + leadTypeScore + distanceScore + sourceScore + spendScore;
+  const rawClamped = Math.max(0, Math.min(100, Math.round(rawSum)));
+
+  let score = rawClamped;
+  let spreadAdjustment = 0;
+
+  if (input.leadType === "homeowner") {
+    const capped = Math.min(rawClamped, HOMEOWNER_SCORE_CAP);
+    spreadAdjustment = capped - rawClamped;
+    score = capped;
+  } else if (isTradeLeadType(input.leadType)) {
+    const floor = TRADE_SCORE_FLOOR[input.leadType];
+    const floored = Math.max(rawClamped, floor);
+    spreadAdjustment = floored - rawClamped;
+    score = Math.min(100, floored);
+  }
+
   const breakdown: ScoreBreakdown = {
     emailPresentScore,
     leadTypeScore,
     distanceScore,
     sourceScore,
-    spendScore
+    spendScore,
+    spreadAdjustment
   };
-
-  const score = Math.max(
-    0,
-    Math.min(100, Math.round(emailPresentScore + leadTypeScore + distanceScore + sourceScore + spendScore))
-  );
 
   const projectFitScore = Math.min(100, Math.round(leadTypeScore + spendScore * 1.2));
   const conversionScore = Math.min(

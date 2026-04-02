@@ -118,6 +118,7 @@ export interface Lead {
     distanceScore: number;
     sourceScore: number;
     spendScore: number;
+    spreadAdjustment?: number;
   };
 }
 

@@ -1421,7 +1421,7 @@ export function DashboardApp({
                     <div>
                       <h2 className="text-lg font-semibold text-brand-ink">Lead library</h2>
                       <p className="mt-0.5 text-xs text-slate-600">
-                        Sorted by <strong>score</strong> (trade types rank above homeowners at the same score). Filter, multi-select with checkboxes, preview first-touch
+                        Sorted by <strong>score</strong> (homeowners are capped below all trade types; ties use designer → builder → architect). Filter, multi-select with checkboxes, preview first-touch
                         copy, and launch campaigns to the selected audience.
                       </p>
                     </div>

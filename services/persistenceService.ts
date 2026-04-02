@@ -584,6 +584,8 @@ export const enrichLead = async (leadId: string) => {
   return { ok: true as const, geocoded: geo.ok };
 };
 
+const RECALC_CONCURRENCY = 40;
+
 /** Recompute score / tier / breakdown for every lead (e.g. after scoring formula change). */
 export const recalculateAllLeadScores = async (): Promise<number> => {
   const rows = await db.lead.findMany({
@@ -599,7 +601,8 @@ export const recalculateAllLeadScores = async (): Promise<number> => {
     }
   });
   const now = new Date();
-  for (const row of rows) {
+
+  const applyRow = (row: (typeof rows)[number]) => {
     const scored = scoreLeadBase({
       email: row.email,
       source: row.source as Lead["source"],
@@ -611,7 +614,7 @@ export const recalculateAllLeadScores = async (): Promise<number> => {
     const st = row.status as LeadStatus;
     const nextPipeline =
       st === "New" || st === "Qualified" ? pipelineStatusForTier(scored.priorityTier) : undefined;
-    await db.lead.update({
+    return db.lead.update({
       where: { id: row.id },
       data: {
         score: scored.score,
@@ -624,7 +627,13 @@ export const recalculateAllLeadScores = async (): Promise<number> => {
         updatedAt: now
       }
     });
+  };
+
+  for (let i = 0; i < rows.length; i += RECALC_CONCURRENCY) {
+    const chunk = rows.slice(i, i + RECALC_CONCURRENCY);
+    await Promise.all(chunk.map((row) => applyRow(row)));
   }
+
   return rows.length;
 };
 
