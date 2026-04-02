@@ -418,6 +418,23 @@ export const useDashboard = (
     return data as { ok?: boolean; error?: string; results?: unknown[] };
   };
 
+  const cleanSlateOutreach = async () => {
+    const res = await fetch("/api/dev/clean-slate", {
+      method: "POST",
+      headers: {
+        ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+      }
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      deleted?: Record<string, number>;
+      leadsReset?: number;
+      error?: string;
+    };
+    await refresh();
+    return { ok: res.ok && data.ok !== false, ...data };
+  };
+
   const dispatchScheduledDue = async (limit = 20) => {
     const res = await fetch("/api/dev/dispatch-scheduled", {
       method: "POST",
@@ -505,6 +522,7 @@ export const useDashboard = (
     markNotInterestedClient,
     simulateInbound,
     seedInboxSamples,
+    cleanSlateOutreach,
     createLead,
     notifications,
     markNotificationsRead,

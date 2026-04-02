@@ -16,8 +16,10 @@ export type InboxThread = {
   priorityTier: string;
   score: number;
   status: string;
-  lastOutboundSnippet: string;
-  inboundSnippet: string;
+  /** Full body of the most recent outbound message (by sentAt). */
+  lastOutboundBody: string;
+  /** Full text of the inbound reply for this thread. */
+  inboundBody: string;
   classification: string;
   confidence: number;
   recommendedNext: string;
@@ -279,8 +281,8 @@ export function aggregateDashboard(
       priorityTier: l.priorityTier,
       score: l.score,
       status: l.status,
-      lastOutboundSnippet: lastOut ? (lastOut.body.length > 100 ? `${lastOut.body.slice(0, 100)}…` : lastOut.body) : "—",
-      inboundSnippet: latest.bodyText.length > 100 ? `${latest.bodyText.slice(0, 100)}…` : latest.bodyText,
+      lastOutboundBody: lastOut?.body?.trim() ? lastOut.body : "—",
+      inboundBody: latest.bodyText?.trim() ? latest.bodyText : "—",
       classification: latest.classification,
       confidence: latest.classificationConfidence,
       recommendedNext: latest.suggestedAction,

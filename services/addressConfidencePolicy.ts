@@ -67,7 +67,7 @@ export type LaunchCampaignOptions = {
   includeVeryPoorAddress?: boolean;
   /** Required when any launched lead has address &lt; 51. */
   confirmLowAddressRisk?: boolean;
-  /** Send to score ≥ deploy-verify threshold without Verify-tab approval (use with care). */
+  /** Skip Verify-tab approval for all leads on campaign launch (use with extreme care). */
   includeUnverifiedHighScore?: boolean;
 };
 
@@ -134,6 +134,10 @@ export function outreachReadiness(lead: Lead): OutreachReadiness {
     factors.push("Not interested");
     return { tier: "blocked", label: "Retired", leadScore: lead.score, addressConfidence: addr, factors };
   }
+  if (lead.deployVerifyVerdict === "rejected") {
+    factors.push("Verify rejected");
+    return { tier: "blocked", label: "Verify rejected", leadScore: lead.score, addressConfidence: addr, factors };
+  }
   if (!hasAddr) {
     factors.push("Address confidence not set");
   } else if (addr !== null && addr < OUTREACH_ADDRESS_MIN_DEFAULT) {
@@ -142,12 +146,30 @@ export function outreachReadiness(lead: Lead): OutreachReadiness {
     factors.push(`Address ${addr} (${addressBandLabel(addressConfidenceBand(addr))})`);
   }
   factors.push(`Lead score ${lead.score}`);
+  if (lead.deployVerifyVerdict !== "approved") {
+    factors.push("Verify tab: not approved yet");
+  }
 
   if (!hasAddr || (addr !== null && addr < OUTREACH_ADDRESS_MIN_DEFAULT)) {
     return { tier: "caution", label: "Needs review / override", leadScore: lead.score, addressConfidence: addr, factors };
   }
   if (addr !== null && addr < 86) {
-    return { tier: "caution", label: "Outreach OK — verify copy", leadScore: lead.score, addressConfidence: addr, factors };
+    return {
+      tier: "caution",
+      label: lead.deployVerifyVerdict === "approved" ? "Outreach OK — verify copy" : "Address OK — needs Verify ✓",
+      leadScore: lead.score,
+      addressConfidence: addr,
+      factors
+    };
+  }
+  if (lead.deployVerifyVerdict !== "approved") {
+    return {
+      tier: "caution",
+      label: "Strong address — needs Verify ✓",
+      leadScore: lead.score,
+      addressConfidence: addr,
+      factors
+    };
   }
   return { tier: "ready", label: "Outreach-ready", leadScore: lead.score, addressConfidence: addr, factors };
 }

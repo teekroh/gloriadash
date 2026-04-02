@@ -6,28 +6,23 @@ import { DEPLOY_VERIFY_MIN_SCORE } from "@/services/deployVerifyPolicy";
 /** Max leads returned in one response (browser memory). `stats.pending` is always the full count. */
 const VERIFY_QUEUE_MAX = 2000;
 
-/** Leads with strong scores still awaiting pre-deploy verification. */
+/** Leads awaiting Verify (any score). Sorted by score desc. */
 export async function GET() {
-  const [pending, rejected, approvedHigh] = await Promise.all([
+  const [pending, rejected, approved] = await Promise.all([
     db.lead.count({
       where: {
-        score: { gte: DEPLOY_VERIFY_MIN_SCORE },
         deployVerifyVerdict: null,
         doNotContact: false
       }
     }),
     db.lead.count({ where: { deployVerifyVerdict: "rejected" } }),
     db.lead.count({
-      where: {
-        score: { gte: DEPLOY_VERIFY_MIN_SCORE },
-        deployVerifyVerdict: "approved"
-      }
+      where: { deployVerifyVerdict: "approved" }
     })
   ]);
 
   const rows = await db.lead.findMany({
     where: {
-      score: { gte: DEPLOY_VERIFY_MIN_SCORE },
       deployVerifyVerdict: null,
       doNotContact: false
     },
@@ -41,7 +36,8 @@ export async function GET() {
     stats: {
       pending,
       rejected,
-      approvedHigh,
+      approved,
+      approvedHigh: approved,
       minScore: DEPLOY_VERIFY_MIN_SCORE,
       loaded: leads.length,
       cappedAt: VERIFY_QUEUE_MAX

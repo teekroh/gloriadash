@@ -62,6 +62,14 @@ export async function dispatchDueScheduledOutreach(limit = 30): Promise<{ dispat
         skipped += 1;
         continue;
       }
+      if (leadRow.deployVerifyVerdict !== "approved") {
+        await db.message.update({
+          where: { id: msg.id },
+          data: { status: "cancelled_verify_pending", body: `${msg.body}\n[cancelled: verify not approved]` }
+        });
+        skipped += 1;
+        continue;
+      }
       const st = leadRow.status;
       if (st === "Booked" || st === "Not Interested") {
         await db.message.update({

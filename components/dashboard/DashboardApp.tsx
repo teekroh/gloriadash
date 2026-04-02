@@ -18,7 +18,7 @@ import {
   OUTREACH_ADDRESS_MIN_DEFAULT,
   OUTREACH_ADDRESS_VERY_POOR_MAX
 } from "@/services/addressConfidencePolicy";
-import { DEPLOY_VERIFY_MIN_SCORE, isEligibleForCampaignSend } from "@/services/deployVerifyPolicy";
+import { isEligibleForCampaignSend } from "@/services/deployVerifyPolicy";
 import type { InboxThread, Phase3Metrics } from "@/services/dashboardAggregation";
 import { Campaign } from "@/types/campaign";
 import type { LeadType } from "@/types/lead";
@@ -551,14 +551,14 @@ function InboxChatColumn({
               <div className="grid min-h-0 min-w-0 flex-1 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div>
                   <p className="text-[11px] font-semibold text-slate-700">Last outbound</p>
-                  <p className="mt-1 max-h-28 overflow-y-auto text-xs text-slate-700 whitespace-pre-wrap">
-                    {selectedThread.lastOutboundSnippet}
+                  <p className="mt-1 max-h-[min(40vh,22rem)] overflow-y-auto text-xs text-slate-700 whitespace-pre-wrap">
+                    {selectedThread.lastOutboundBody}
                   </p>
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold text-slate-700">Their reply (last inbound)</p>
-                  <p className="mt-1 max-h-40 overflow-y-auto text-xs text-slate-700 whitespace-pre-wrap">
-                    {selectedThread.inboundSnippet}
+                  <p className="mt-1 max-h-[min(40vh,22rem)] overflow-y-auto text-xs text-slate-700 whitespace-pre-wrap">
+                    {selectedThread.inboundBody}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/80 pt-2">
@@ -857,14 +857,12 @@ export function DashboardApp({
   const selectedLeads = vm.leads.filter((l) => vm.selectedIds.includes(l.id));
   const bookingLinkPreview = vm.bookingLinkDisplay || appConfig.bookingLink || "";
   const campaignSequencePreview = useMemo(() => getCampaignSequencePreview(bookingLinkPreview), [bookingLinkPreview]);
-  const firstTouchLaunchSamples = useMemo(
-    () =>
-      selectedLeads.slice(0, 5).map((lead) => ({
-        lead,
-        rendered: renderFirstTouchForLead(lead, bookingLinkPreview)
-      })),
-    [selectedLeads, bookingLinkPreview]
-  );
+  /** One template sample only (first selected lead) — avoids implying we preview every lead and never calls Claude in the browser. */
+  const firstTouchLaunchSample = useMemo(() => {
+    const lead = selectedLeads[0];
+    if (!lead) return null;
+    return { lead, rendered: renderFirstTouchForLead(lead, bookingLinkPreview) };
+  }, [selectedLeads, bookingLinkPreview]);
 
   const launchAddressOpts = useMemo(
     () => ({
@@ -949,14 +947,9 @@ export function DashboardApp({
     [selectedLeads, launchAddressOpts]
   );
 
-  const unapprovedHighScoreInSelection = useMemo(
-    () =>
-      selectedLeads.filter(
-        (l) =>
-          l.score >= DEPLOY_VERIFY_MIN_SCORE &&
-          l.deployVerifyVerdict !== "approved" &&
-          l.deployVerifyVerdict !== "rejected"
-      ).length,
+  /** Leads without Verify ✓ (null or rejected) — rejected still cannot send even with override. */
+  const unapprovedVerifyInSelection = useMemo(
+    () => selectedLeads.filter((l) => l.deployVerifyVerdict !== "approved").length,
     [selectedLeads]
   );
 
@@ -1284,7 +1277,8 @@ export function DashboardApp({
                         Add lead
                       </h3>
                       <p className="mt-1 text-xs text-slate-600">
-                        Creates a <strong>Manual</strong> source lead, recomputes fit score from distance / spend / type, and sets Verify to pending if score is high.
+                        Creates a <strong>Manual</strong> source lead, recomputes fit score from distance / spend / type, and leaves <strong>Verify</strong> pending until
+                        you approve in the Verify tab.
                       </p>
                       <form
                         className="mt-4 space-y-3"
@@ -1590,7 +1584,17 @@ export function DashboardApp({
                         <tr key={lead.id} className="border-t hover:bg-slate-50">
                           <td className="p-2"><input type="checkbox" checked={vm.selectedIds.includes(lead.id)} onChange={(e) => vm.setSelectedIds((ids) => e.target.checked ? [...ids, lead.id] : ids.filter((id) => id !== lead.id))} /></td>
                           <td className="p-2">
-                            <p className="font-medium text-brand-ink">{lead.fullName}</p>
+                            <p className="flex items-center gap-1.5 font-medium text-brand-ink">
+                              {lead.deployVerifyVerdict === "approved" ? (
+                                <span
+                                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold leading-none text-white"
+                                  title="Verify approved — OK to include in campaign (address rules still apply)"
+                                >
+                                  ✓
+                                </span>
+                              ) : null}
+                              <span>{lead.fullName}</span>
+                            </p>
                             <p className="text-xs text-slate-500">{lead.company || lead.email}</p>
                           </td>
                           <td className="p-2">
@@ -1692,11 +1696,12 @@ export function DashboardApp({
                       checked={campaignOverrideVerify}
                       onChange={(e) => setCampaignOverrideVerify(e.target.checked)}
                     />
-                    Send to score ≥{DEPLOY_VERIFY_MIN_SCORE} without Verify approval (override)
+                    Skip Verify approval for all selected leads (dangerous)
                   </label>
-                  {unapprovedHighScoreInSelection > 0 && !campaignOverrideVerify ? (
+                  {unapprovedVerifyInSelection > 0 && !campaignOverrideVerify ? (
                     <p className="w-full text-xs text-amber-800">
-                      {unapprovedHighScoreInSelection} selected lead(s) need <strong>Verify</strong> thumbs-up before send, or check the override above.
+                      {unapprovedVerifyInSelection} selected lead(s) are not Verify-approved (no green ✓). Approve in the <strong>Verify</strong> tab, or use the
+                      override above.
                     </p>
                   ) : null}
                   <button
@@ -1733,11 +1738,11 @@ export function DashboardApp({
                     <p className="mt-1">
                       Excluded by default (need &lt;71 override): {campaignAddressPreview.excludedByDefault} · excluded very poor (≤10, need checkbox):{" "}
                       {campaignAddressPreview.excludedVeryPoor} · would send with current checkboxes: {campaignAddressPreview.wouldSendNow}{" "}
-                      (includes Verify gate for score ≥{DEPLOY_VERIFY_MIN_SCORE})
+                      (every lead needs Verify ✓ before send unless you use the override)
                     </p>
-                    {unapprovedHighScoreInSelection > 0 && !campaignOverrideVerify ? (
+                    {unapprovedVerifyInSelection > 0 && !campaignOverrideVerify ? (
                       <p className="mt-1 text-amber-900">
-                        Verify: {unapprovedHighScoreInSelection} selected high-score lead(s) not approved — they will be skipped unless you override.
+                        Verify: {unapprovedVerifyInSelection} selected lead(s) without green ✓ — they will be skipped unless you override.
                       </p>
                     ) : null}
                     <p className="mt-1 text-amber-900">
@@ -1759,36 +1764,44 @@ export function DashboardApp({
                   </div>
                 ) : null}
                 <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <p className="font-semibold text-brand-ink">Launch preview — first-touch (up to 5 leads)</p>
+                  <p className="font-semibold text-brand-ink">Launch preview — sample first-touch (template)</p>
                   <p className="mt-1 text-xs text-slate-600">
-                    Copy is generated from <strong>lead type → classification</strong>. City appears only when <strong>address confidence ≥86</strong> or CRM
-                    / enrichment location trust is high. Business score does not change wording.
+                    <strong>Each launched lead gets unique copy:</strong> template layers vary by lead; on the server, with{" "}
+                    <code className="rounded bg-white/80 px-1">ANTHROPIC_API_KEY</code>, Claude rewrites each first-touch from that lead&apos;s CRM context.
+                    This panel shows <strong>one template example</strong> only (first lead in your selection) — <strong>no Claude calls here</strong>, so
+                    final sends can read differently per lead.
                   </p>
-                  <p className="mt-2 text-xs text-slate-700">Audience selected: {selectedLeads.length}</p>
-                  {firstTouchLaunchSamples.length === 0 ? (
-                    <p className="mt-2 text-xs text-amber-800">Select at least one lead to preview copy.</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Template rules: <strong>lead type → classification</strong>; city only when <strong>address ≥86</strong> or high location trust. Score
+                    does not change wording.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-700">
+                    Audience selected: {selectedLeads.length}
+                    {selectedLeads.length > 1 ? (
+                      <span className="text-slate-500"> · sample below is the first lead only; others are not pre-rendered.</span>
+                    ) : null}
+                  </p>
+                  {!firstTouchLaunchSample ? (
+                    <p className="mt-2 text-xs text-amber-800">Select at least one lead to see a template sample.</p>
                   ) : (
-                    <ul className="mt-3 space-y-3">
-                      {firstTouchLaunchSamples.map(({ lead, rendered }) => (
-                        <li key={lead.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-                          <p className="font-medium text-brand-ink">
-                            {lead.fullName} · <span className="capitalize text-slate-600">{lead.leadType.replace(/_/g, " ")}</span> ·{" "}
-                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
-                              {rendered.classification}
-                            </span>
-                            {rendered.locationOmitted ? (
-                              <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
-                                location omitted
-                              </span>
-                            ) : null}{" "}
-                            <span className="text-slate-500">{rendered.templateId}</span>
-                          </p>
-                          <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-brand-ink/90">
-                            {rendered.body}
-                          </pre>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                      <p className="font-medium text-brand-ink">
+                        {firstTouchLaunchSample.lead.fullName} ·{" "}
+                        <span className="capitalize text-slate-600">{firstTouchLaunchSample.lead.leadType.replace(/_/g, " ")}</span> ·{" "}
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                          {firstTouchLaunchSample.rendered.classification}
+                        </span>
+                        {firstTouchLaunchSample.rendered.locationOmitted ? (
+                          <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                            location omitted
+                          </span>
+                        ) : null}{" "}
+                        <span className="text-slate-500">{firstTouchLaunchSample.rendered.templateId}</span>
+                      </p>
+                      <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-brand-ink/90">
+                        {firstTouchLaunchSample.rendered.body}
+                      </pre>
+                    </div>
                   )}
                 </div>
                 </div>
@@ -2057,7 +2070,7 @@ export function DashboardApp({
                           <SourceBadge source={t.source as Lead["source"]} />
                           <StatusBadge status={t.status as Lead["status"]} />
                         </div>
-                        <p className="mt-1.5 line-clamp-2 text-[10px] text-slate-600">{clip(t.inboundSnippet, 120)}</p>
+                        <p className="mt-1.5 line-clamp-2 text-[10px] text-slate-600">{clip(t.inboundBody, 120)}</p>
                       </button>
                     );
                   })}
@@ -2212,6 +2225,33 @@ export function DashboardApp({
                   Seed inbox samples
                 </button>
                 <p className="text-xs text-slate-600">Runs POST /api/dev/seed-inbox-samples — one simulated inbound per scenario on top-scored leads.</p>
+                <button
+                  type="button"
+                  className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-950 hover:bg-rose-100"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        "Clean slate: delete all messages, campaigns, inbound replies, follow-ups, bookings, and notifications; reset every lead to New with Verify cleared (DNC and scores kept). Continue?"
+                      )
+                    ) {
+                      return;
+                    }
+                    void vm.cleanSlateOutreach().then((r) => {
+                      if (!r?.ok) {
+                        window.alert((r as { error?: string })?.error ?? "Clean slate failed (check ALLOW_DEV_ROUTES + admin key).");
+                        return;
+                      }
+                      window.alert(
+                        `Clean slate done. Leads reset: ${r.leadsReset ?? "?"}. Deleted: ${JSON.stringify(r.deleted ?? {})}`
+                      );
+                    });
+                  }}
+                >
+                  Clean slate (outreach data)
+                </button>
+                <p className="text-xs text-slate-600">
+                  POST /api/dev/clean-slate — requires <code className="rounded bg-white/80 px-1">ALLOW_DEV_ROUTES</code> and admin key. Use before a fresh send pass.
+                </p>
               </div>
 
               <div className="card space-y-4">

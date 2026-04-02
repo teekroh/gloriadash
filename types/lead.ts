@@ -77,7 +77,7 @@ export interface Lead {
   priorityTier: PriorityTier;
   status: LeadStatus;
   doNotContact: boolean;
-  /** Pre-deploy Verify tab: null = not yet reviewed (required for score ≥ threshold to send). */
+  /** Verify tab: null = not approved yet (required before campaign send); "approved" = green check / eligible to send. */
   deployVerifyVerdict?: "approved" | "rejected" | null;
   lastContactedAt?: string;
   nextFollowUpAt?: string;

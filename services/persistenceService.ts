@@ -70,7 +70,7 @@ export const ensureOwnerTestLead = async () => {
       priorityTier: scored.priorityTier,
       status: "New",
       doNotContact: false,
-      deployVerifyVerdict: "approved",
+      deployVerifyVerdict: null,
       scoreBreakdownJson: JSON.stringify(scored.breakdown),
       createdAt: now,
       updatedAt: now
@@ -85,7 +85,7 @@ export const ensureOwnerTestLead = async () => {
       addressConfidence: 95,
       confidenceNotes: "Manual owner test lead — verified address.",
       importedFromCsv: false,
-      deployVerifyVerdict: "approved",
+      deployVerifyVerdict: null,
       score: scored.score,
       conversionScore: scored.conversionScore,
       projectFitScore: scored.projectFitScore,
@@ -677,5 +677,60 @@ export const markLeadNotInterested = async (leadId: string) => {
     data: { status: "Not Interested", updatedAt: new Date() }
   });
 };
+
+/**
+ * Wipes outreach state: messages, campaigns, inbound, follow-ups, bookings, notifications.
+ * Resets each lead to a clean pre-outreach state (Verify cleared). Preserves DNC, scores, voice training.
+ */
+export async function cleanSlateOutreachData(): Promise<{
+  ok: true;
+  deleted: {
+    followUps: number;
+    messages: number;
+    inboundReplies: number;
+    campaignLeads: number;
+    campaigns: number;
+    bookings: number;
+    notifications: number;
+  };
+  leadsReset: number;
+}> {
+  const result = await db.$transaction(async (tx) => {
+    const followUps = await tx.followUp.deleteMany({});
+    const messages = await tx.message.deleteMany({});
+    const inboundReplies = await tx.inboundReply.deleteMany({});
+    const campaignLeads = await tx.campaignLead.deleteMany({});
+    const campaigns = await tx.campaign.deleteMany({});
+    const bookings = await tx.booking.deleteMany({});
+    const notifications = await tx.dashboardNotification.deleteMany({});
+    const leadsReset = await tx.lead.updateMany({
+      data: {
+        status: "New",
+        deployVerifyVerdict: null,
+        lastContactedAt: null,
+        nextFollowUpAt: null,
+        updatedAt: new Date()
+      }
+    });
+    await tx.dashboardRuntimeConfig.upsert({
+      where: { id: "default" },
+      create: { id: "default", outreachDryRunOverride: null },
+      update: { outreachDryRunOverride: null }
+    });
+    return {
+      deleted: {
+        followUps: followUps.count,
+        messages: messages.count,
+        inboundReplies: inboundReplies.count,
+        campaignLeads: campaignLeads.count,
+        campaigns: campaigns.count,
+        bookings: bookings.count,
+        notifications: notifications.count
+      },
+      leadsReset: leadsReset.count
+    };
+  });
+  return { ok: true, ...result };
+}
 
 export { markBooked, type MarkBookedResult } from "@/services/markBookedService";

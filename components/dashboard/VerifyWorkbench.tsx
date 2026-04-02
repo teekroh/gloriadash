@@ -6,7 +6,6 @@ import {
   ADDRESS_CONFIDENCE_TOOLTIP,
   AddressConfidenceBadge
 } from "@/components/ui/AddressConfidenceBadge";
-import { DEPLOY_VERIFY_MIN_SCORE } from "@/services/deployVerifyPolicy";
 import { SourceBadge } from "@/components/ui/SourceBadge";
 
 type QueueResponse = {
@@ -164,15 +163,15 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
       <header className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-lg font-semibold text-brand-ink">Pre-deploy verify</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Score <strong>≥ {stats?.minScore ?? DEPLOY_VERIFY_MIN_SCORE}</strong> leads need a human check before they count as <strong>outreach-ready</strong> for
-          campaigns: <strong>Approve for send</strong> marks them cleared to include when you launch — it does <strong>not</strong> auto-send email. Reject bins
-          obvious bad leads. Uncertain applies a score penalty without rejecting (see below).
+          <strong>Every</strong> lead must pass this check before you can include them in a campaign launch (green ✓ on the Leads table).{" "}
+          <strong>Approve for send</strong> does not auto-send email. Reject bins bad fits. Uncertain applies a score penalty without rejecting (see below). Queue
+          is sorted by score (highest first).
         </p>
         {stats ? (
           <>
             <p className="mt-2 text-xs text-slate-700">
               <strong>{stats.pending}</strong> pending · <strong className="text-rose-700">{stats.rejected}</strong> rejected (bin) ·{" "}
-              <strong className="text-emerald-800">{stats.approvedHigh}</strong> high-score approved
+              <strong className="text-emerald-800">{stats.approvedHigh}</strong> approved for send
             </p>
             {stats.loaded !== undefined ? (
               <p className="mt-1 text-xs text-slate-600">
@@ -195,7 +194,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
       {!current ? (
         <div className="card p-10 text-center">
           <p className="text-lg font-medium text-brand-ink/90">Queue empty</p>
-          <p className="mt-2 text-sm text-slate-600">All high-score leads are approved or rejected. New imports start unreviewed again.</p>
+          <p className="mt-2 text-sm text-slate-600">All leads are approved or rejected (none pending). New imports start unreviewed again.</p>
           <button
             type="button"
             className="mt-4 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-brand-ink/90 hover:bg-slate-50"
@@ -244,7 +243,7 @@ export function VerifyWorkbench({ onRefresh }: { onRefresh: () => Promise<void> 
                   <span className="text-slate-500">· {current.priorityTier}</span>
                 </p>
                 <p className="text-xs text-amber-900">
-                  Send eligibility: <strong>requires Verify approval</strong> (score ≥ {DEPLOY_VERIFY_MIN_SCORE}).
+                  Campaign send: <strong>requires Approve for send</strong> on this screen first (all leads, any score).
                 </p>
                 <p className="flex flex-wrap items-center gap-2">
                   <span className="text-slate-500" title={ADDRESS_CONFIDENCE_TOOLTIP}>
