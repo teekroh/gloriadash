@@ -247,37 +247,46 @@ export const useDashboard = (
   );
 
   const launchCampaign = async (name: string, options?: LaunchCampaignOptions) => {
-    const response = await fetch("/api/campaigns/launch", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
-      },
-      body: JSON.stringify({
-        name,
-        leadIds: selectedIds,
-        includeUnverifiedHighScore: options?.includeUnverifiedHighScore
-      })
-    });
-    const data = await response.json();
-    if (data?.ok) setSelectedIds([]);
-    await refresh();
-    return data as
-      | {
-          ok: true;
-          result: {
-            ok: boolean;
-            campaignId: string;
-            sentCount: number;
-            skippedByLimit: number;
-            skippedByAddressPolicy: number;
-            skippedVeryPoor: number;
-            skippedDoNotContact: number;
-            skippedByDeployVerify: number;
-            dryRun: boolean;
-          };
-        }
-      | { ok: false; error?: string; errorCode?: string; result?: unknown };
+    try {
+      const response = await fetch("/api/campaigns/launch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminApiKey ? { "x-api-key": adminApiKey } : {})
+        },
+        body: JSON.stringify({
+          name,
+          leadIds: selectedIds,
+          includeUnverifiedHighScore: options?.includeUnverifiedHighScore
+        })
+      });
+      const data = await response
+        .json()
+        .catch(() => ({ ok: false, error: `Launch failed (${response.status}).` }));
+      if (data?.ok) setSelectedIds([]);
+      await refresh();
+      return data as
+        | {
+            ok: true;
+            result: {
+              ok: boolean;
+              campaignId: string;
+              sentCount: number;
+              skippedByLimit: number;
+              skippedByAddressPolicy: number;
+              skippedVeryPoor: number;
+              skippedDoNotContact: number;
+              skippedByDeployVerify: number;
+              dryRun: boolean;
+            };
+          }
+        | { ok: false; error?: string; errorCode?: string; result?: unknown };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Launch failed unexpectedly."
+      };
+    }
   };
 
   const applyMockReply = async (leadId: string, text: string) => {

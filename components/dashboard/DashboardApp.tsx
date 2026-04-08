@@ -1448,22 +1448,29 @@ function DashboardAppInner({
                         disabled={vm.selectedIds.length === 0}
                         className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={async () => {
-                          if (vm.selectedIds.length === 0) {
-                            void gloriaAlert("Select one or more leads in the table (checkboxes) before launching.", "Launch campaign");
-                            return;
-                          }
-                          const data = await vm.launchCampaign(campaignName, {
-                            includeUnverifiedHighScore: campaignOverrideVerify
-                          });
-                          if (data && "ok" in data && data.ok && data.result) {
-                            const r = data.result;
+                          try {
+                            if (vm.selectedIds.length === 0) {
+                              void gloriaAlert("Select one or more leads in the table (checkboxes) before launching.", "Launch campaign");
+                              return;
+                            }
+                            const data = await vm.launchCampaign(campaignName, {
+                              includeUnverifiedHighScore: campaignOverrideVerify
+                            });
+                            if (data && "ok" in data && data.ok && data.result) {
+                              const r = data.result;
+                              void gloriaAlert(
+                                `${r.dryRun ? "Dry run" : "Live send"} complete: ${r.sentCount} sent · limit skips ${r.skippedByLimit} · ` +
+                                  `verify gate ${r.skippedByDeployVerify ?? 0} · DNC ${r.skippedDoNotContact}`,
+                                "Campaign sent"
+                              );
+                            } else if (data && "ok" in data && !data.ok) {
+                              void gloriaAlert((data as { error?: string }).error ?? "Launch blocked.", "Launch campaign");
+                            }
+                          } catch (error) {
                             void gloriaAlert(
-                              `${r.dryRun ? "Dry run" : "Live send"} complete: ${r.sentCount} sent · limit skips ${r.skippedByLimit} · ` +
-                                `verify gate ${r.skippedByDeployVerify ?? 0} · DNC ${r.skippedDoNotContact}`,
-                              "Campaign sent"
+                              error instanceof Error ? error.message : "Launch failed unexpectedly.",
+                              "Launch campaign"
                             );
-                          } else if (data && "ok" in data && !data.ok) {
-                            void gloriaAlert((data as { error?: string }).error ?? "Launch blocked.", "Launch campaign");
                           }
                         }}
                       >
